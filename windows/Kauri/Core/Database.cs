@@ -89,6 +89,8 @@ public sealed class Database
     public static Database Shared { get; private set; } = null!;
     public event Action? HistoriesChanged;
     public event Action? SnippetsChanged;
+    /// <summary>The user deleted one history item (not a limit or a clear).</summary>
+    public event Action<string>? HistoryDeleted;
 
     Database(string path)
     {
@@ -245,6 +247,14 @@ public sealed class Database
     public void DeleteHistory(string id)
     {
         using (var c = Connect()) Exec(c, "DELETE FROM histories WHERE id=$id", ("$id", id));
+        HistoryDeleted?.Invoke(id);
+        HistoriesChanged?.Invoke();
+    }
+
+    /// <summary>Deletes a history item for sync, without telling sync about it.</summary>
+    public void DeleteHistoryQuietly(string id)
+    {
+        using (var c = Connect()) Exec(c, "DELETE FROM histories WHERE id=$id", ("$id", id));
         HistoriesChanged?.Invoke();
     }
 
@@ -393,6 +403,38 @@ public sealed class Database
     public void DeleteFolder(Guid id)
     {
         using (var c = Connect()) Exec(c, "DELETE FROM snippetFolders WHERE id=$id", ("$id", id.ToString()));
+        SnippetsChanged?.Invoke();
+    }
+
+    /// <summary>Writes what sync merged, in one transaction, and notifies once.</summary>
+    public void ApplySync(IReadOnlyList<SnippetFolder> folders, IReadOnlyList<Snippet> snippets, IReadOnlyList<Guid> deletedSnippets, IReadOnlyList<Guid> deletedFolders)
+    {
+        using (var c = Connect())
+        using (var tx = c.BeginTransaction())
+        {
+            void Run(string sql, params (string, object?)[] args)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = sql;
+                foreach (var (k, v) in args) cmd.Parameters.AddWithValue(k, v ?? DBNull.Value);
+                cmd.ExecuteNonQuery();
+            }
+            foreach (var f in folders)
+                Run("""
+                    INSERT INTO snippetFolders(id,title,idx,isEnabled) VALUES($id,$t,$i,$e)
+                    ON CONFLICT(id) DO UPDATE SET title=excluded.title, idx=excluded.idx, isEnabled=excluded.isEnabled
+                    """, ("$id", f.Id.ToString()), ("$t", f.Title), ("$i", f.Index), ("$e", f.IsEnabled ? 1 : 0));
+            foreach (var s in snippets)
+                Run("""
+                    INSERT INTO snippets(id,folderId,title,content,idx,isEnabled) VALUES($id,$f,$t,$c,$i,$e)
+                    ON CONFLICT(id) DO UPDATE SET folderId=excluded.folderId, title=excluded.title, content=excluded.content,
+                      idx=excluded.idx, isEnabled=excluded.isEnabled
+                    """, ("$id", s.Id.ToString()), ("$f", s.FolderId.ToString()), ("$t", s.Title), ("$c", s.Content), ("$i", s.Index), ("$e", s.IsEnabled ? 1 : 0));
+            foreach (var id in deletedSnippets) Run("DELETE FROM snippets WHERE id=$id", ("$id", id.ToString()));
+            foreach (var id in deletedFolders) Run("DELETE FROM snippetFolders WHERE id=$id", ("$id", id.ToString()));
+            tx.Commit();
+        }
         SnippetsChanged?.Invoke();
     }
 

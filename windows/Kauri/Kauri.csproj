@@ -26,12 +26,15 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <PackageReference Include="libsodium" Version="1.0.22" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
     <Resource Include="Assets\*.png" />
     <Resource Include="Assets\Kauri.ico" />
     <Resource Include="Assets\NOTICES.txt" />
+    <EmbeddedResource Include="Sync\bip39_english.txt" LogicalName="Kauri.Sync.bip39_english.txt" />
   </ItemGroup>
 
 </Project>

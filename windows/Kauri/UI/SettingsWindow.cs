@@ -8,7 +8,7 @@ using Kauri.Core;
 
 namespace Kauri.UI;
 
-public enum SettingsPane { General, Menu, Type, Exclude, Shortcuts, Beta, About }
+public enum SettingsPane { General, Menu, Type, Exclude, Shortcuts, Sync, Beta, About }
 
 /// <summary>Port of Clipy's Settings window (sindresorhus/Settings toolbar style + SwiftUI panes).</summary>
 public sealed class SettingsWindow : MacWindow
@@ -25,6 +25,7 @@ public sealed class SettingsWindow : MacWindow
         (SettingsPane.Type, "Type", "\uE77F"),
         (SettingsPane.Exclude, "Exclude", "\uE733"),
         (SettingsPane.Shortcuts, "Shortcuts", "\uE765"),
+        (SettingsPane.Sync, "Sync", "\uE895"),
         (SettingsPane.Beta, "Beta", "\uEA80"),
         (SettingsPane.About, "About", "\uE946"),
     };
@@ -185,6 +186,7 @@ public sealed class SettingsWindow : MacWindow
         SettingsPane.Type => TypePane(),
         SettingsPane.Exclude => ExcludePane(),
         SettingsPane.Shortcuts => ShortcutsPane(),
+        SettingsPane.Sync => new SyncPane(Dark),
         SettingsPane.Beta => BetaPane(),
         _ => AboutPane(),
     };
@@ -429,7 +431,7 @@ public sealed class SettingsWindow : MacWindow
         header.Children.Add(names);
         stack.Children.Add(header);
 
-        var desc = Mac.Text("Clipboard history and snippets for Windows. Everything stays on this PC: history and settings are stored locally and nothing is sent over the network.", 13, Theme.TextPrimary);
+        var desc = Mac.Text("Clipboard history and snippets for Windows. Everything stays on this PC unless you turn on sync, which encrypts your snippets here before it sends them.", 13, Theme.TextPrimary);
         desc.TextWrapping = TextWrapping.Wrap;
         desc.Margin = new Thickness(0, 20, 0, 0);
         stack.Children.Add(desc);

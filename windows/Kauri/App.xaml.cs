@@ -20,6 +20,28 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        if (args.Length > 1 && args[0] == "--sync-check")
+        {
+            int i = Array.IndexOf(args, "--out");
+            using var log = i > 0 && i + 1 < args.Length ? new System.IO.StreamWriter(args[i + 1]) : new System.IO.StreamWriter(Console.OpenStandardOutput());
+            Shutdown(Kauri.Sync.SyncCheck.Run(args[1], log));
+            return;
+        }
+#if DEBUG
+        // Sync test mode: KAURI_SYNC_TEST_SERVER and KAURI_SYNC_TEST_WORDS join that chain.
+        // No single-instance lock, clipboard monitoring, hot keys or tray icon.
+        if (Environment.GetEnvironmentVariable("KAURI_SYNC_TEST_SERVER") is string testServer &&
+            Environment.GetEnvironmentVariable("KAURI_SYNC_TEST_WORDS") is string testWords)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            AppSettings.Load();
+            Database.Open();
+            var engine = Kauri.Sync.SyncEngine.Shared;
+            engine.Start();
+            if (!engine.IsOn) _ = engine.Join(testServer, testWords);
+            return;
+        }
+#endif
 
         _mutex = new Mutex(true, "Kauri.SingleInstance", out bool created);
         if (!created)
@@ -39,6 +61,10 @@ public partial class App : Application
         menus.Quit = Quit;
 
         ClipService.Shared.StartMonitoring();
+        Kauri.Sync.SyncEngine.Shared.NewSyncCode += code => Dispatcher.BeginInvoke(() => SyncPane.ShowSyncCode(code));
+        Kauri.Sync.SyncEngine.Shared.Removed += () => Dispatcher.BeginInvoke(() =>
+            MacAlert.Show("This PC was removed from sync.", "Another device removed it. Your snippets stay on this PC.", new[] { "OK" }));
+        Kauri.Sync.SyncEngine.Shared.Start();
         HotKeyService.Shared.Setup();
         HotKeyService.Shared.Triggered += a =>
         {

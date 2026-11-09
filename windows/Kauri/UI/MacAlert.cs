@@ -18,7 +18,16 @@ public sealed class MacAlert : Window
     public bool Suppressed => _suppress?.IsChecked == true;
     public FrameworkElement Body { get; }
 
-    public MacAlert(string message, string info, IReadOnlyList<string> buttons, bool showsSuppression, string suppressionTitle = "Don't ask again")
+    public int Result => _result;
+
+    /// <summary>Closes the alert as if button <paramref name="result"/> was clicked.</summary>
+    public void Finish(int result)
+    {
+        _result = result;
+        Close();
+    }
+
+    public MacAlert(string message, string info, IReadOnlyList<string> buttons, bool showsSuppression, string suppressionTitle = "Don't ask again", FrameworkElement? extra = null)
     {
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
@@ -61,6 +70,11 @@ public sealed class MacAlert : Window
             t.Margin = new Thickness(0, 12, 0, 0);
             t.HorizontalAlignment = HorizontalAlignment.Left;
             content.Children.Add(t);
+        }
+        if (extra != null)
+        {
+            extra.Margin = new Thickness(0, 16, 0, 0);
+            content.Children.Add(extra);
         }
         if (showsSuppression)
         {
@@ -118,7 +132,7 @@ public sealed class MacAlert : Window
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape) { _result = buttons.Count - 1; Close(); }
-            if (e.Key == Key.Enter) { _result = 0; Close(); }
+            if (e.Key == Key.Enter && !(e.OriginalSource is TextBox { AcceptsReturn: true })) { _result = 0; Close(); }
         };
         Loaded += (_, _) => Native.ForceForeground(new WindowInteropHelper(this).Handle);
     }
