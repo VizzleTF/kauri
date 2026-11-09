@@ -21,7 +21,7 @@ jobs:
       - name: Sync check (protocol test vectors)
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist\Kauri.exe -ArgumentList '--sync-check','docs\sync-vectors1.json','--out',"$env:RUNNER_TEMP\sync.txt" -PassThru -Wait
+          $p = Start-Process -FilePath dist\Kauri.exe -ArgumentList '--sync-check','docs/sync-vectors/v1.json','--out',"$env:RUNNER_TEMP\sync.txt" -PassThru -Wait
           Get-Content "$env:RUNNER_TEMP\sync.txt"
           if ($p.ExitCode -ne 0) { throw "sync check failed" }
       - name: Smoke test (render the main menu offscreen)
