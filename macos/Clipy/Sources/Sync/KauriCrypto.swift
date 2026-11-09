@@ -101,18 +101,29 @@ enum Kauri {
 
     /// HChaCha20 (draft-irtf-cfrg-xchacha §2.2).
     static func hchacha20(key: Data, nonce: Data) -> Data {
+        // Explicit types and steps keep the Swift type checker fast.
         func words(_ d: Data) -> [UInt32] {
             let b = [UInt8](d)
-            return stride(from: 0, to: b.count, by: 4).map {
-                UInt32(b[$0]) | UInt32(b[$0 + 1]) << 8 | UInt32(b[$0 + 2]) << 16 | UInt32(b[$0 + 3]) << 24
+            var out = [UInt32]()
+            for i in stride(from: 0, to: b.count, by: 4) {
+                var w = UInt32(b[i])
+                w |= UInt32(b[i + 1]) << 8
+                w |= UInt32(b[i + 2]) << 16
+                w |= UInt32(b[i + 3]) << 24
+                out.append(w)
             }
+            return out
         }
-        var x: [UInt32] = [0x6170_7865, 0x3320_646e, 0x7962_2d32, 0x6b20_6574] + words(key) + words(nonce)
+        func rotl(_ v: UInt32, _ n: UInt32) -> UInt32 { (v << n) | (v >> (32 - n)) }
+        let constants: [UInt32] = [0x6170_7865, 0x3320_646e, 0x7962_2d32, 0x6b20_6574]
+        var x = constants
+        x += words(key)
+        x += words(nonce)
         func quarter(_ a: Int, _ b: Int, _ c: Int, _ d: Int) {
-            x[a] &+= x[b]; x[d] ^= x[a]; x[d] = x[d] << 16 | x[d] >> 16
-            x[c] &+= x[d]; x[b] ^= x[c]; x[b] = x[b] << 12 | x[b] >> 20
-            x[a] &+= x[b]; x[d] ^= x[a]; x[d] = x[d] << 8 | x[d] >> 24
-            x[c] &+= x[d]; x[b] ^= x[c]; x[b] = x[b] << 7 | x[b] >> 25
+            x[a] &+= x[b]; x[d] = rotl(x[d] ^ x[a], 16)
+            x[c] &+= x[d]; x[b] = rotl(x[b] ^ x[c], 12)
+            x[a] &+= x[b]; x[d] = rotl(x[d] ^ x[a], 8)
+            x[c] &+= x[d]; x[b] = rotl(x[b] ^ x[c], 7)
         }
         for _ in 0..<10 {
             quarter(0, 4, 8, 12); quarter(1, 5, 9, 13); quarter(2, 6, 10, 14); quarter(3, 7, 11, 15)
