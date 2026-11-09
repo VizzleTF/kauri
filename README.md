@@ -10,10 +10,10 @@ This repository holds every platform:
 |---|---|---|
 | [`windows/`](windows) | Windows 10 and 11 app (WPF, .NET 10) | Works, no sync yet |
 | [`macos/`](macos) | macOS app (Swift, based on Clipy 1.4) | Planned |
-| [`docs/sync.md`](docs/sync.md) | Kauri Sync protocol, shared by all clients | Draft |
+| [`docs/sync.md`](docs/sync.md) | Kauri Sync protocol and test vectors, shared by all clients | v1, server implemented |
 | [`branding/`](branding) | App and tray icons | |
 
-The sync server will live in its own repository, `kauri-sync`.
+The sync server lives in its own repository, [kauri-sync](https://github.com/VizzleTF/kauri-sync).
 
 ## Features
 

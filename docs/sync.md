@@ -1,241 +1,343 @@
 # Kauri Sync, protocol version 1
 
-Kauri Sync keeps snippets, and if you turn it on, clipboard history, the same on all your devices. It has three properties:
+Kauri Sync keeps snippets the same on all your devices, and clipboard history too if you turn it on. It is built around three properties:
 
-- **End-to-end encrypted.** The server stores data it cannot read, and cannot tell a snippet from a clip.
-- **No account.** Devices form a *sync chain*. The chain's secret is a 24-word sync code that never leaves the devices.
-- **Automatic.** Changes are pushed as they happen, and the server wakes the other devices at once.
+- **End-to-end encrypted.** The server stores data it cannot read. It cannot even tell a snippet from a clip.
+- **No account.** Devices form a *sync chain*. Its secret is a 24-word sync code that never leaves the devices.
+- **Automatic.** A device pushes each change as it happens, and the server wakes the chain's other devices at once.
 
-The server is `kauri-sync` (separate repository, to be created). This document is what the Windows and macOS clients and the server implement. Test vectors for every derivation and format go into `docs/sync-vectors/` together with the first implementation, and are part of the specification.
+The server is [kauri-sync](https://github.com/VizzleTF/kauri-sync). The Windows and macOS clients and the server implement this document. The test vectors in [`sync-vectors/v1.json`](sync-vectors/v1.json) are part of the specification, and every client MUST pass them. [`sync-vectors/check.py`](sync-vectors/check.py) checks them independently of the reference code, using PyNaCl (libsodium) and `cryptography`. The check covers SPAKE2 through libsodium's edwards25519 operations.
 
-Words such as MUST and SHOULD are used as in RFC 2119.
+The words MUST, SHOULD and MAY are used as in RFC 2119.
 
 ## 1. Threat model
 
-What Kauri Sync protects against:
-
 | Threat | Protection |
 |---|---|
-| A server operator, or someone who breaks into the server, reads or changes data | All content is encrypted and authenticated on the device (§4). A changed or replayed record fails to decrypt, or is rejected by the version rules (§6) |
-| The server learns what kind of data you store | Record IDs are random. Every kind of record goes into one opaque type. Sizes are padded into buckets (§4.3). There are no plaintext timestamps |
-| A network attacker | TLS. Requests are also signed by a device key, so a stolen bearer value cannot be replayed (§7.1) |
-| A stolen or lost device | You remove it from another device. The chain is re-keyed, and the removed device can no longer read new data or write anything (§9) |
-| Harvest now, decrypt later | Data keys travel between devices in hybrid X25519 + ML-KEM-768 envelopes (§3.3). All symmetric keys are 256-bit |
-| A weak device-local secret | There is none to type in. The sync code holds 256 bits of entropy |
+| A server operator, or an intruder on the server, reads or changes data | Content is encrypted and authenticated on the device (§4). A changed record fails to decrypt. A record replayed from an older version is rejected (§6) |
+| The server learns what kind of data you keep | Record IDs are random-looking, all kinds share one opaque type, sizes are padded into buckets (§4.3), and records carry no plaintext timestamps |
+| A network attacker | TLS. On top of it, every request is signed by a device key and can be used once (§7.1) |
+| A lost or stolen device | Remove it from another device. The chain moves to new keys, and the removed device can read or write nothing new (§9) |
+| Harvest now, decrypt later | Data keys travel to devices in hybrid X25519 + ML-KEM-768 envelopes (§3.3). Every symmetric key is 256 bits |
+| A guessable secret | Nobody types a password. The sync code holds 256 bits, and pairing codes allow a single online guess (§8) |
 
-What it does not protect against: malware running as you on a device that is in the chain, and traffic analysis by the server operator. The operator can see your IP address, when your devices sync and roughly how much data the chain holds. Running your own server, or reaching it over Tor, limits this.
+Kauri Sync does not protect against malware that runs as you on a device of the chain. It also does not hide traffic patterns from the server operator, who sees your IP address, when your devices sync, and roughly how much the chain stores. Running your own server, or reaching it over Tor, limits this.
 
-## 2. Primitives
+## 2. Encodings and primitives
 
-| Purpose | Algorithm | Windows (.NET 10) | macOS (CryptoKit) |
-|---|---|---|---|
-| Key derivation | HKDF-SHA-256 (RFC 5869) | `HKDF` | `HKDF<SHA256>` |
-| Content encryption | XChaCha20-Poly1305 with 192-bit random nonces | libsodium via NSec | swift-sodium / libsodium |
-| Device signatures | Ed25519 | NSec | `Curve25519.Signing` |
-| Envelopes | X25519 + ML-KEM-768 hybrid KEM, then HKDF, then XChaCha20-Poly1305 | NSec + `MLKem` (liboqs where Windows lacks ML-KEM) | `Curve25519.KeyAgreement` + `MLKEM768` (macOS 26+) |
-| Pairing | SPAKE2 (RFC 9382) over edwards25519 | shared implementation, test vectors | shared implementation, test vectors |
-| Sync code | BIP-39 English, 24 words = 256-bit entropy + 8-bit checksum | | |
+**Encodings.** Bytes in JSON are base64url without padding. Every integer that goes into an AAD, a signature or a key derivation is fixed-width big-endian: `u32(n)` is 4 bytes, `u64(n)` is 8. Strings are UTF-8. `||` is concatenation and `0x00` is a single zero byte.
 
-The same libsodium build is used on both platforms, so XChaCha20-Poly1305 is identical everywhere. Random 192-bit nonces can't realistically collide, so no nonce counter has to be kept across devices.
+**Primitives.**
+
+| Purpose | Algorithm |
+|---|---|
+| Key derivation | HKDF-SHA-256 (RFC 5869) |
+| Encryption | XChaCha20-Poly1305 (libsodium `crypto_aead_xchacha20poly1305_ietf`) with a random 24-byte nonce |
+| Signatures | Ed25519 (RFC 8032) |
+| Envelopes | X25519 + ML-KEM-768 (FIPS 203), §3.3 |
+| Pairing | SPAKE2 (RFC 9382) over edwards25519, §8 |
+| Sync code | BIP-39 English: 24 words, 256-bit entropy |
+
+Every symmetric ciphertext in this document has the form `seal(key, plaintext, aad) = nonce(24) || ciphertext || tag(16)`.
+
+**Platform libraries.**
+
+- Windows uses libsodium through NSec, and .NET's `MLKem`.
+- macOS uses libsodium, CryptoKit's `Curve25519` and, from macOS 26, `MLKEM768`.
+- The reference implementation, and the source of the test vectors, is the Go package `kauri` in kauri-sync.
 
 ## 3. Keys
 
 ### 3.1 From the sync code
 
-The sync code encodes the *chain secret* `CS` (32 bytes). Every other chain-level value comes from `CS` through HKDF-SHA-256, with `salt = "kauri-sync/v1"` and these `info` strings:
+The 24 words encode the 32-byte *chain secret* `CS` as BIP-39 entropy. Chain values are derived with `HKDF(ikm = CS, salt = "kauri-sync/v1", info, length 32)`:
 
-| Output | `info` | Use |
+| Value | `info` | Use |
 |---|---|---|
-| `chain_id` (32 B) | `chain-id` | Identifies the chain to the server. Sent as base64url |
-| `chain_auth` (32 B) | `chain-auth` | Seed of the chain's Ed25519 key, used to authorise new devices (§7.1) |
-| `wrap_key` (32 B) | `wrap-key` | Wraps the current data key, for recovery from the sync code alone |
-| `id_key` (32 B) | `record-id-key` | Keys the HMAC that turns local IDs into record IDs (§4.1) |
+| `chain_id` | `chain-id` | Names the chain to the server |
+| `chain_auth` | `chain-auth` | The Ed25519 seed of the *chain key*, which can add devices |
+| `wrap_key` | `wrap-key` | Wraps data keys, so the sync code alone can recover them |
+| `id_key` | `record-id-key` | Keys record and blob IDs (§4.1) |
+| `name_key` | `device-name-key` | Encrypts device names |
 
-The server stores only `SHA-256(chain_id)` and the public half of `chain_auth`. It never sees `CS`.
+The server stores `SHA-256(chain_id)` and the chain key's public key. It never sees `CS` or any value derived from it except `chain_id`, which travels in a request header.
 
-### 3.2 The data key
+### 3.2 Data keys
 
-Content is encrypted with a random 32-byte *data key* `DK`. Each data key has an *epoch*, a counter that starts at 1. Re-keying (§9) creates `DK` for the next epoch and re-encrypts every record.
+Content is encrypted with a random 32-byte *data key* `DK`. Each data key belongs to an *epoch*, which starts at 1. For each epoch the server keeps:
 
-The server keeps a *keyring* record for each epoch:
+- `wrapped = seal(wrap_key, DK, "kauri-sync/v1/keyring" || chain_id || u32(epoch))`, which lets a device that has only the sync code recover;
+- one envelope (§3.3) of `DK` for each member device.
 
-- `DK` wrapped with `wrap_key` (XChaCha20-Poly1305, AAD = `"keyring" || chain_id || epoch`), so a device that has only the sync code can recover;
-- `DK` sealed in an envelope (§3.3) to every device that is a member at that epoch.
+A member MAY start a new epoch at any time (§7.2, `POST /v1/keyring`). New writes then use it; older records stay readable until they are rewritten.
 
-### 3.3 Device keys and envelopes
+### 3.3 Devices and envelopes
 
-On first start every device creates:
+On first start a device creates three keys and keeps their private halves in the platform keystore (DPAPI on Windows, the Keychain on macOS):
 
-- an Ed25519 key `dev_sign`, which signs requests and identifies the device;
-- an X25519 key and an ML-KEM-768 key, which receive envelopes.
+- an Ed25519 *device key*;
+- an X25519 key;
+- an ML-KEM-768 key.
 
-The private keys stay in the platform keystore: DPAPI-protected storage on Windows, the Keychain on macOS (with the Secure Enclave where it can).
+`device_id = SHA-256(device public key)[0..16]`.
 
-An envelope to a device seals a 32-byte payload as follows:
+To seal a 32-byte payload to a device:
 
 ```
-(ss_x, ct_x)   = X25519 ephemeral exchange with the device's X25519 public key
-(ss_k, ct_k)   = ML-KEM-768 encapsulate to the device's ML-KEM public key
-k              = HKDF-SHA-256(salt = "kauri-sync/v1/envelope",
-                              ikm  = ss_x || ss_k,
-                              info = ct_x || ct_k || device_id)
-envelope       = ct_x || ct_k || XChaCha20-Poly1305(k, payload, aad = chain_id || epoch || device_id)
+e, E   = new X25519 key pair                    ; E is 32 bytes
+ss_x   = X25519(e, device X25519 key)           ; MUST NOT be all zeros
+ct_k, ss_k = ML-KEM-768.Encaps(device ML-KEM key)   ; ct_k is 1088 bytes
+k      = HKDF(ikm  = ss_x || ss_k,
+              salt = "kauri-sync/v1/envelope",
+              info = E || ct_k || device X25519 key || device_id, length 32)
+envelope = 0x02 || E || ct_k || seal(k, payload, chain_id || u32(epoch) || device_id)
 ```
 
-A device that has no ML-KEM implementation, such as macOS before 26, registers no ML-KEM key. Envelopes to it then use X25519 only, with `ss_k` and `ct_k` empty. The device list marks such devices, because their envelopes are not post-quantum.
+If a device has no ML-KEM key (macOS before 26), its envelopes start with `0x01`, and `ct_k` and `ss_k` are empty. Clients show such a device as not post-quantum.
 
 ## 4. Records
 
-Everything that syncs is a *record*: a snippet folder, a snippet, a clip, or a settings bundle. The server sees records only in this form:
+Everything that syncs is a *record*: a folder, a snippet, a clip or the shared settings. The server sees a record as:
 
 ```json
-{ "id": "<22 chars base64url>", "version": 1842, "epoch": 3, "body": "<base64url ciphertext>" }
+{ "id": "kTq3-...", "version": 1842, "epoch": 1, "deleted": false, "body": "..." }
 ```
 
-### 4.1 Record IDs
+### 4.1 IDs
 
-`id = base64url(HMAC-SHA-256(id_key, kind || ":" || local_uuid)[0..16])`
+- `record id = HMAC-SHA-256(id_key, kind || ":" || local UUID in lowercase)[0..16]`
+- `blob id   = HMAC-SHA-256(id_key, "blob:" || SHA-256(plaintext))[0..16]`
 
-The ID is stable for the life of the item and reveals neither its kind nor its local UUID.
+Both are sent as 22-character base64url. They are stable, and reveal neither the kind nor the content.
 
 ### 4.2 Body
 
-The plaintext is deterministic CBOR (RFC 8949 §4.2):
+The plaintext is a UTF-8 JSON object:
 
-```
+```json
 {
-  "k": "folder" | "snippet" | "clip" | "settings",
-  "f": { <field name>: [<value>, <HLC timestamp>], ... },   ; per-field last-writer-wins
-  "d": <HLC timestamp> | null                              ; tombstone time, if deleted
+  "k": "snippet",
+  "f": { "title": ["Hello", [1762600000000, 0, "<device_id>"]], "...": "..." },
+  "d": null
 }
 ```
+
+- `f` maps each field to `[value, hlc]`. An HLC is `[wall ms, counter, device_id]` (§5.1).
+- `d` is the HLC of the deletion, or `null`.
 
 The fields of each kind:
 
 | Kind | Fields |
 |---|---|
-| `folder` | `title`, `enabled`, `order` (fractional index, §5.2), `hotkey` (optional; each device can override it locally) |
+| `folder` | `title`, `enabled`, `order` |
 | `snippet` | `folder` (record ID), `title`, `content`, `enabled`, `order` |
-| `clip` | `types` (list), `title`, `assets` (list of `{type, blob}`), `created`, `lastUsed`, `origin` (device ID) |
-| `settings` | Only the settings that make sense on every device: menu layout, history limit, numbering. Not shortcuts, not excluded apps |
+| `clip` | `types` (list), `title`, `text`, `assets` (list of `{"type", "blob", "size"}`), `created`, `lastUsed` |
+| `settings` | Settings that make sense on every device: history limit, menu numbering, folder size. Shortcuts, excluded apps and per-device hot keys never sync |
 
-`body = nonce(24) || XChaCha20-Poly1305(DK_epoch, pad(cbor), aad = chain_id || id || epoch)`
+Clients MUST keep fields they don't know and write them back unchanged.
+
+```
+body = seal(DK_epoch, pad(json), chain_id || record id || u32(epoch))
+```
 
 ### 4.3 Padding
 
-Before encryption the CBOR is padded to the smallest bucket that fits: 256 B, 1 KiB, 4 KiB, 16 KiB or 64 KiB. Above 64 KiB the content has to go into a blob. Padding is an ISO/IEC 7816-4 0x80 byte, then zeros.
+`pad(p)` appends `0x80` and then zeros, up to the smallest of 256, 1024, 4096, 16384 or 65536 bytes that leaves room for the `0x80`. Plaintext longer than 65535 bytes MUST NOT be a record: put the large part in a blob.
 
 ### 4.4 Blobs
 
-Image and file assets of clips are stored as blobs, never inside a record.
+Clip images and file contents are blobs, uploaded before the record that names them.
 
-- `blob_id = base64url(HMAC-SHA-256(DK_epoch, "blob:" || content)[0..16])`
-- The blob is encrypted the same way, padded to a multiple of 64 KiB, and uploaded once.
-- A blob that no live record references is deleted by the server after a grace period.
+```
+blob = seal(DK_epoch, pad64(content), chain_id || blob id || u32(epoch))
+```
+
+`pad64` pads in the same way as `pad`, up to the next multiple of 65536 bytes.
+
+A record write lists the IDs of the blobs the record uses (`blobs`, §7.2). From that list the server knows which blobs are still in use. It deletes a blob that no live record lists once a day has passed.
 
 ## 5. Merging
 
-Clients merge. The server only orders writes.
+The clients merge; the server only orders writes.
 
 ### 5.1 Hybrid logical clocks
 
-Each field carries an HLC timestamp:
+An HLC is `[wall, counter, device]`, compared in that order:
 
 - `wall`: Unix milliseconds;
-- `counter`: 16 bits;
-- `device`: the first 8 bytes of the device ID.
+- `counter`: 0 to 65535;
+- `device`: compared as a string.
 
-Timestamps are compared in that order. To merge two versions of a record, take the newer value of every field. A tombstone wins over every field that is older than it. A field edited after the tombstone revives the record.
+On every local edit the device takes `max(now, highest wall it has seen)`. It resets the counter if `wall` moved forward and increments it otherwise. It also advances its clock past every HLC it receives.
+
+To merge two versions of a record:
+
+- take the newer `[value, hlc]` of every field;
+- take the newer `d`;
+- the record is deleted if `d` is newer than every field. Editing a field after a deletion revives the record.
 
 ### 5.2 Order
 
-Folder and snippet order is a fractional index: a base-62 string that sorts lexicographically. Moving an item rewrites only that item's `order`. Two devices that pick the same index break the tie by record ID.
+`order` is a fractional index: a string of the digits `0-9A-Za-z` that sorts by byte. An item moved between neighbours `a` and `b` gets a string strictly between them. Equal strings break the tie by record ID.
 
-### 5.3 History
+### 5.3 Deletions
 
-- Clips never change after they are created, except `lastUsed`.
-- Each device enforces the history limit by deleting the oldest clips, writing tombstones for them.
-- Tombstones older than 30 days are compacted by the server.
+To delete an item, write its record with `d` set and `deleted: true`. The server removes deleted records 30 days after their last write. It then answers `410 resync` to `changes` requests whose `since` is older than that.
 
-## 6. Versions and writes
+On a resync a client fetches everything from version 0. It deletes local items that are missing from the result, unless they have unsent changes, and then uploads what is left.
 
-The server gives every write the next value of a per-chain sequence, called `version`. A client keeps the highest version it has applied. A write MAY carry `if_version`. The server refuses the write with `409` if the record has changed since that version; the client then fetches the record, merges it and tries again.
+## 6. Versions
 
-A client MUST reject a record whose version is lower than one it has already applied for the same ID. This stops a server from rolling a record back to an older ciphertext.
+The server gives every write the next value of a per-chain counter, called the `version`. A client remembers the highest version it has applied.
+
+A write MAY carry `if_version`. The server rejects the batch with `409` if the record's current version differs. The client then fetches the record, merges and retries.
+
+A client MUST ignore a record whose version is not higher than the version it already applied to that ID. This stops the server from replaying old ciphertext.
 
 ## 7. Server API
 
-All endpoints live under `https://<server>/v1/` and use JSON.
+Endpoints live under `/v1/`. Request and response bodies are JSON, except blobs.
 
-### 7.1 Authentication
+### 7.1 Signed requests
 
-Every request carries the following headers:
+Every request except the unauthenticated pairing ones carries these headers:
 
 ```
+Kauri-Protocol:  1
 Kauri-Chain:     base64url(chain_id)
-Kauri-Device:    base64url(dev_sign public key)
+Kauri-Device:    base64url(device public key)
 Kauri-Time:      Unix seconds
-Kauri-Signature: Ed25519(dev_sign, method || path || time || SHA-256(body))
+Kauri-Nonce:     base64url(16 random bytes)
+Kauri-Signature: base64url(Ed25519(device key,
+                   "kauri-sync/v1/request" || 0x00 || method || 0x00 || path with query
+                   || 0x00 || Kauri-Time || 0x00 || nonce || SHA-256(body)))
 ```
 
-The server rejects a request if:
+The nonce keeps two identical requests sent in the same second from getting the same signature. Ed25519 is deterministic, so without it the second request would look like a replay.
 
-- the time is more than 5 minutes off;
-- the signature has been seen before, within the time window;
-- the device is not a member of the chain.
+The server answers `401` in three cases:
 
-Adding a member requires the signature of the chain key (`chain_auth`) or of an existing member.
+- the time is more than 300 seconds away from its clock;
+- the signature was already used;
+- the device is not a member of the chain, apart from the requests that add one.
+
+A removed device gets `403`.
 
 ### 7.2 Endpoints
 
-| Method and path | Purpose |
-|---|---|
-| `POST /chains` | Create a chain: `chain_id` hash, `chain_auth` public key, first device, keyring epoch 1 |
-| `POST /devices` | Join, signed by the chain key or by a member. Uploads the device's public keys and an encrypted device name |
-| `DELETE /devices/{id}` | Remove a device, signed by a member. Starts a re-key (§9) |
-| `GET /keyring` | Wrapped data keys and the envelopes for this device |
-| `GET /changes?since=<version>&limit=<n>` | Records changed after `version`, in version order |
-| `POST /records` | Write a batch of `{id, epoch, body, if_version?}`, all or nothing |
-| `PUT /blobs/{id}` / `GET /blobs/{id}` | Upload or download a blob |
-| `GET /events` | Server-Sent Events: `changed <version>`, `keyring <epoch>`, `removed` |
-| `POST /pair/...` | SPAKE2 relay (§8) |
+A *device info* object is `{"sign", "x25519", "mlkem", "name"}`:
 
-### 7.3 Limits
+- `mlkem` MAY be empty;
+- `name` is `seal(name_key, device name, "kauri-sync/v1/name" || device_id)`.
 
-The server enforces limits per chain: total bytes, number of records, and blob size. The defaults are 256 MiB, 100,000 records and 16 MiB per blob. Clients SHOULD keep within them by limiting history and by not syncing large files.
+| Request | Body | Answer |
+|---|---|---|
+| `POST /v1/chains` | `{"chain_key", "chain_sig", "device", "keyring": {"epoch": 1, "wrapped", "envelope"}}` | `201`. `409` if the chain exists |
+| `POST /v1/devices` | `{"device", "chain_sig"?, "envelope"?}` | `201` |
+| `GET /v1/devices` | | `{"devices": [{"id", "sign", "x25519", "mlkem", "name", "added", "removed"}]}` |
+| `DELETE /v1/devices/{id}` | | `204` |
+| `GET /v1/keyring` | | `{"epoch", "wrapped", "envelope"}`. `envelope` is this device's envelope, or empty |
+| `POST /v1/keyring` | `{"epoch", "wrapped", "envelopes": [{"device", "envelope"}]}` | `201`. `epoch` MUST be the current one plus 1 |
+| `GET /v1/changes?since=V&limit=N` | | `{"version", "records": [...], "more"}`. `410 {"error": "resync"}` if `since` is too old |
+| `POST /v1/records` | `{"records": [{"id", "epoch", "body", "deleted", "blobs"?, "if_version"?}]}` | `{"versions": [...]}`. `409 {"conflicts": [ids]}`. `413` over a limit |
+| `PUT /v1/blobs/{id}` | the blob bytes | `204` |
+| `GET /v1/blobs/{id}` | | the blob bytes, or `404` |
+| `GET /v1/events` | | Server-Sent Events, §7.3 |
+| `POST /v1/forward` | `{"envelopes": [{"device", "envelope"}]}` | `204`, §9 |
+| `GET /v1/forward` | | `{"envelope"}` for this device |
+
+**Who may add a device:**
+
+- `POST /v1/chains` is signed by the device that creates the chain. `chain_sig = Ed25519(chain key, "kauri-sync/v1/add" || 0x00 || chain_id || device public key)` proves that the device knows the sync code.
+- `POST /v1/devices` is either signed by a member, which adds the device in the body and sends its envelope, or signed by the new device itself together with `chain_sig`. The second form is recovery from the 24 words.
+
+**Batches.** `POST /v1/records` is all or nothing. Versions are returned in the order of the request.
+
+**Limits per chain** (defaults): 256 MiB of bodies and blobs, 100,000 records, 16 MiB per blob, 1,000 records and 8 MiB per batch.
+
+### 7.3 Events
+
+`GET /v1/events` streams these events:
+
+| Event | Data | What the client does |
+|---|---|---|
+| `ready` | `{}` | The stream is open. The client fetches changes |
+| `changed` | `{"version"}` | Fetch changes. A device is not told about its own writes |
+| `devices` | `{}` | The device list changed |
+| `keyring` | `{"epoch"}` | A new epoch started |
+| `removed` | `{}` | This device was removed: stop syncing and forget the chain |
+| `forwarded` | `{}` | The chain moved: `GET /v1/forward` (§9) |
+
+The server sends a comment every 25 seconds and `retry: 5000`.
 
 ## 8. Adding a device
 
-You can add a device in two ways.
+A device joins in one of two ways.
 
-1. **Pairing code (the usual way).** A device in the chain shows a 6-digit code, valid for 5 minutes. The new device types it in. The two devices run SPAKE2 with the code as the password, through the server's relay. They then use the shared key to exchange encrypted messages:
-   - the new device sends its public keys;
-   - the existing device sends `CS` and adds the new device as a member.
+### 8.1 With a pairing code (the usual way)
 
-   The server sees only SPAKE2 messages. A wrong code fails after a single guess, and the server allows 5 attempts per code.
-2. **Sync code.** Type the 24 words. The device derives the chain values, joins with the chain key and unwraps `DK` with `wrap_key`. This is the recovery path when no other device is at hand.
+A device of the chain, called A, shows a code of 12 Crockford base32 characters as `XXXX-XXXX-XXXX`. The alphabet is `0-9A-Z` without `I`, `L`, `O` and `U`; when the code is typed, `O` reads as `0`, and `I` and `L` read as `1`. The new device, B, types it. The code lives 5 minutes.
 
-## 9. Removing a device and re-keying
+```
+slot  = hex(SHA-256("kauri-pair-slot-v1" || 0x00 || first 4 characters))
+w     = SHA-512("kauri-pair-v1" || 0x00 || slot || 0x00 || last 8 characters) mod L
+SPAKE2 (RFC 9382): group edwards25519, generator G, M and N from RFC 9382 §6,
+        A = "kauri-pair-existing", B = "kauri-pair-new", AAD = slot
+pA    = w·M + x·G           (A, random scalar x)
+pB    = w·N + y·G           (B, random scalar y)
+K     = (8x mod L)·(pB − w·N) = (8y mod L)·(pA − w·M)
+TT    = RFC 9382 transcript of A, B, pA, pB, K and w as a 32-byte big-endian number
+Ke || Ka = SHA-256(TT)
+KcA || KcB = HKDF(ikm = Ka, salt = none (32 zero bytes, RFC 5869), info = "ConfirmationKeys" || AAD, length 32)
+cB    = HMAC-SHA-256(KcB, TT)
+box_key = HKDF(ikm = Ke, salt = "kauri-pair-v1", info = "box", length 32)
+number  = u32(HKDF(ikm = Ke, salt = "kauri-pair-v1", info = "verify", length 4)) mod 10000
+```
 
-Removing a device MUST re-key the chain, because the removed device knows `CS`.
+Points MUST be valid encodings in the prime-order subgroup. Neither side may use `K`, `Ke` or `box_key` before it has checked the confirmation it receives.
 
-1. A remaining device creates a new chain secret `CS'` and a new data key `DK'`.
-2. It creates the new chain, which gets a new `chain_id`, and seals `CS'` in an envelope to each remaining device.
-3. It re-encrypts every live record under `DK'` and uploads them to the new chain.
-4. It writes a *forwarding record* to the old chain, sealed in an envelope to each remaining device. The record names the new chain, so the other devices move over by themselves.
-5. It deletes the old chain.
+1. A opens the slot with `pA`.
+2. B reads the slot and finishes SPAKE2. It joins with `pB`, `cB` and `seal(box_key, info, "kauri-pair-v1/join" || slot)`. Here `info` is B's device info as JSON. B does not know `name_key` yet, so it puts its name in as plain text.
+3. A checks `cB`. If the check fails, A deletes the slot and makes a new code. Otherwise both devices show `number`, and A asks the user to allow the new device by name.
+4. On Allow, A seals B's name with `name_key` and adds B with `POST /v1/devices`, including B's envelope. It then approves with `seal(box_key, CS, "kauri-pair-v1/approve" || slot)`.
+5. B opens the box and has the sync code.
 
-The removed device keeps what it already downloaded, but it cannot read or write anything new. The app shows the new sync code and suggests that you write it down.
+The pairing endpoints:
 
-## 10. Privacy rules in the clients
+| Request | Auth | Body | Answer |
+|---|---|---|---|
+| `POST /v1/pair` | member | `{"slot", "msg"}` | `204`. `409` if the slot is taken |
+| `GET /v1/pair/{slot}` | none | | `{"msg", "joined", "bmsg", "confirm", "box", "approval", "expires"}` |
+| `POST /v1/pair/{slot}/join` | none | `{"msg", "confirm", "box"}` | `204`. `409` if already joined |
+| `POST /v1/pair/{slot}/approve` | member of the slot's chain | `{"box"}` | `204` |
+| `DELETE /v1/pair/{slot}` | member of the slot's chain | | `204` |
+
+A slot takes one join and one approval. The server limits code creation to 20 per hour per chain, joins to 30 per hour per address, and reads to 1,200 per hour per address. A wrong code fails at step 3 after one online guess, and a SPAKE2 transcript gives no way to guess offline.
+
+### 8.2 With the sync code
+
+B enters the 24 words and joins itself with `POST /v1/devices` and `chain_sig`. It then reads `wrapped` from the keyring and unwraps `DK` with `wrap_key`. This path works even when no other device is online.
+
+## 9. Removing a device
+
+The removed device knows `CS`, so removing it MUST move the chain to new secrets. A remaining device M does the following:
+
+1. Removes the device: `DELETE /v1/devices/{id}`. From then on the server refuses its requests.
+2. Creates `CS'` and a new chain with `POST /v1/chains`, and re-encrypts and uploads every live record and blob under the new chain's `DK'`.
+3. Calls `POST /v1/forward` on the old chain with an envelope of `CS'` for every remaining member. The server deletes the old chain's records, blobs and keyring. It keeps only the forwarding envelopes, for 90 days. It answers every other request on the old chain with `410 {"error": "forwarded"}` and sends `forwarded` events.
+4. Every remaining device reads its envelope with `GET /v1/forward`. It opens the envelope with its own keys, which also works for devices that were offline during the move. It then switches to `CS'`, joins the new chain with `chain_sig`, and syncs.
+
+The app shows the new sync code and suggests writing it down. The removed device keeps what it had already downloaded and nothing more.
+
+## 10. Rules for the clients
 
 - Snippets and folders sync once sync is on. Clipboard history syncs only if you turn it on.
-- A clip is never synced, and is not even stored, if:
-  - its source marks it as confidential: `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory = 0` on Windows, `org.nspasteboard.ConcealedType` on macOS;
-  - it was copied in an excluded app.
-- Synced history is capped at the smaller of the local history limit and 500 clips. Images sync only if you turn that on separately, and only up to 4 MiB each.
-- Every device can see the list of devices in the chain, with their names. Device names are encrypted.
+- A clip is never stored or synced if:
+  - its source marks it as confidential (`ExcludeClipboardContentFromMonitorProcessing`, or `CanIncludeInClipboardHistory` = 0, on Windows; `org.nspasteboard.ConcealedType` on macOS);
+  - it comes from an excluded app.
+- Synced history is capped at the smaller of the local history limit and 500 clips. Images sync only when that is turned on separately, and only up to 4 MiB each.
+- Clients SHOULD batch writes over a 2-second window, and SHOULD refetch on `changed` within 1 second.
 
 ## 11. Versioning
 
-Clients send `Kauri-Protocol: 1`. Whatever changes the record format or the key schedule raises the version. A server MAY serve several protocol versions side by side.
+Clients send `Kauri-Protocol: 1`. A change to the record format, the key schedule or the signatures raises the protocol version. A server MAY serve several versions at the same time.
