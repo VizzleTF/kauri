@@ -1,0 +1,11 @@
+bin/
+obj/
+dist/
+windows/tools/out/
+*.user
+.vs/
+.DS_Store
+xcuserdata/
+DerivedData/
+build/
+__pycache__/

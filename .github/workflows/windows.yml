@@ -1,0 +1,33 @@
+name: windows
+
+on:
+  push:
+    branches: [main]
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  pull_request:
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Publish
+        run: dotnet publish windows/Kauri -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o dist
+      - name: Smoke test (render the main menu offscreen)
+        shell: pwsh
+        run: |
+          $env:KAURI_DATA_DIR = "$env:RUNNER_TEMP\kauri-data"
+          $p = Start-Process -FilePath dist\Kauri.exe -ArgumentList '--render','menu','--theme','dark','--out',"$env:RUNNER_TEMP\menu.png" -PassThru -Wait
+          if ($p.ExitCode -ne 0 -or -not (Test-Path "$env:RUNNER_TEMP\menu.png")) { throw "render failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kauri-win-x64
+          path: |
+            dist/Kauri.exe
+            LICENSE
+            THIRD-PARTY-NOTICES.md
