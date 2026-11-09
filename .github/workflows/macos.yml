@@ -1,0 +1,43 @@
+name: macos
+
+on:
+  push:
+    branches: [main]
+    paths: ["macos/**", "docs/sync-vectors/**", ".github/workflows/macos.yml"]
+  pull_request:
+    paths: ["macos/**", "docs/sync-vectors/**", ".github/workflows/macos.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - name: The app's copy of the test vectors is current
+        run: cmp ClipyTests/Sync/kauri-sync-v1.json ../docs/sync-vectors/v1.json
+      - name: Sync check
+        run: sh scripts/sync_check.sh
+      - name: Test
+        run: |
+          xcodebuild -project Clipy.xcodeproj -scheme Clipy \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            -skipPackagePluginValidation -skipMacroValidation test
+      - name: Build Release
+        run: |
+          xcodebuild -project Clipy.xcodeproj -scheme Clipy -configuration Release \
+            -derivedDataPath build -skipPackagePluginValidation -skipMacroValidation build
+          ditto -c -k --keepParent build/Build/Products/Release/Kauri.app Kauri-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kauri-macOS
+          path: macos/Kauri-macOS.zip

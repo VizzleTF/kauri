@@ -32,7 +32,7 @@ Kauri Sync does not protect against malware that runs as you on a device of the 
 | Purpose | Algorithm |
 |---|---|
 | Key derivation | HKDF-SHA-256 (RFC 5869) |
-| Encryption | XChaCha20-Poly1305 (libsodium `crypto_aead_xchacha20poly1305_ietf`) with a random 24-byte nonce |
+| Encryption | XChaCha20-Poly1305 (draft-irtf-cfrg-xchacha, as libsodium's `crypto_aead_xchacha20poly1305_ietf`) with a random 24-byte nonce |
 | Signatures | Ed25519 (RFC 8032) |
 | Envelopes | X25519 + ML-KEM-768 (FIPS 203), §3.3 |
 | Pairing | SPAKE2 (RFC 9382) over edwards25519, §8 |
@@ -43,7 +43,7 @@ Every symmetric ciphertext in this document has the form `seal(key, plaintext, a
 **Platform libraries.**
 
 - Windows uses libsodium through NSec, and .NET's `MLKem`.
-- macOS uses libsodium, CryptoKit's `Curve25519` and, from macOS 26, `MLKEM768`.
+- macOS uses CryptoKit only: `Curve25519`, `ChaChaPoly`, HKDF and, from macOS 26, `MLKEM768`. XChaCha20 is HChaCha20 in front of `ChaChaPoly`, and the edwards25519 group operations for pairing are a port of TweetNaCl.
 - The reference implementation, and the source of the test vectors, is the Go package `kauri` in kauri-sync.
 
 ## 3. Keys
@@ -105,10 +105,14 @@ Everything that syncs is a *record*: a folder, a snippet, a clip or the shared s
 
 ### 4.1 IDs
 
-- `record id = HMAC-SHA-256(id_key, kind || ":" || local UUID in lowercase)[0..16]`
+- `record id = HMAC-SHA-256(id_key, kind || ":" || local ID)[0..16]`
 - `blob id   = HMAC-SHA-256(id_key, "blob:" || SHA-256(plaintext))[0..16]`
 
-Both are sent as 22-character base64url. They are stable, and reveal neither the kind nor the content.
+The local ID of a folder or snippet is its UUID in lowercase. The device that creates the item picks the UUID and writes it into the body as `u` (§4.2). Every other device stores the item under that same UUID, so all devices derive the same record ID, also for a new chain (§9).
+
+The local ID of a clip is the lowercase hex SHA-256 of its text. Two devices that copy the same text share one record.
+
+Both IDs are sent as 22-character base64url. They are stable, and reveal neither the kind nor the content.
 
 ### 4.2 Body
 
@@ -122,8 +126,9 @@ The plaintext is a UTF-8 JSON object:
 }
 ```
 
-- `f` maps each field to `[value, hlc]`. An HLC is `[wall ms, counter, device_id]` (§5.1).
+- `f` maps each field to `[value, hlc]`. An HLC is `[wall ms, counter, device_id]` (§5.1). `device_id` is base64url.
 - `d` is the HLC of the deletion, or `null`.
+- `u` is the UUID of a folder or snippet (§4.1). It never changes.
 
 The fields of each kind:
 
@@ -324,10 +329,12 @@ The removed device knows `CS`, so removing it MUST move the chain to new secrets
 
 1. Removes the device: `DELETE /v1/devices/{id}`. From then on the server refuses its requests.
 2. Creates `CS'` and a new chain with `POST /v1/chains`, and re-encrypts and uploads every live record and blob under the new chain's `DK'`.
-3. Calls `POST /v1/forward` on the old chain with an envelope of `CS'` for every remaining member. The server deletes the old chain's records, blobs and keyring. It keeps only the forwarding envelopes, for 90 days. It answers every other request on the old chain with `410 {"error": "forwarded"}` and sends `forwarded` events.
+3. Calls `POST /v1/forward` on the old chain with an envelope of `CS'` for every remaining member. The envelopes are sealed as in §3.3 with the old `chain_id` and epoch 0. The server deletes the old chain's records, blobs and keyring. It keeps only the forwarding envelopes, for 90 days. It answers every other request on the old chain with `410 {"error": "forwarded"}` and sends `forwarded` events.
 4. Every remaining device reads its envelope with `GET /v1/forward`. It opens the envelope with its own keys, which also works for devices that were offline during the move. It then switches to `CS'`, joins the new chain with `chain_sig`, and syncs.
 
 The app shows the new sync code and suggests writing it down. The removed device keeps what it had already downloaded and nothing more.
+
+A device that leaves on its own (Turn Off Sync) removes itself with `DELETE /v1/devices/{its id}` and forgets `CS`. The chain does not move: the device was trusted until it left, and the user can still remove it from another device to force a move.
 
 ## 10. Rules for the clients
 

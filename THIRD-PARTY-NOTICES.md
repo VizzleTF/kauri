@@ -1,6 +1,6 @@
 # Third-party notices
 
-Kauri Clip is a Windows port of Clipy. It reuses Clipy's design, behaviour, settings, texts and snippet XML format, so the licenses below apply to those parts. Kauri Clip's icons are its own artwork.
+Kauri Clip for Windows is a port of Clipy, and Kauri Clip for macOS is a fork of it (the code in `macos/` keeps Clipy's history and copyright headers). Both reuse Clipy's design, behaviour, settings, texts and snippet XML format, so the licenses below apply to those parts. Kauri Clip's icons are its own artwork.
 
 ## Clipy
 
@@ -59,6 +59,27 @@ THE SOFTWARE.
 
 Icons are copyrighted by their respective authors.
 ```
+
+## macOS: Swift packages
+
+The macOS app links these packages. Each is under the MIT License, whose text is the one reproduced for Clipy above, with the copyright line below:
+
+| Package | Copyright |
+|---|---|
+| KeyHolder, Magnet, Sauce, Screeen | (c) 2015-2026 Clipy Project |
+| sqlite-data, swift-structured-queries, swift-dependencies, swift-sharing, swift-perception, swift-clocks, swift-concurrency-extras, swift-custom-dump, swift-identified-collections, swift-tagged, combine-schedulers, swift-issue-reporting (xctest-dynamic-overlay) | (c) 2019-2025 Point-Free, Inc. |
+| GRDB.swift | (c) 2015-2025 Gwendal Roué |
+| Settings | (c) Sindre Sorhus |
+| AEXML | (c) 2014-2024 Marko Tadić |
+| SwiftHEXColors | (c) 2014 SwiftHEXColors contributors |
+
+realm-swift and realm-core (© Realm Inc. / MongoDB, Inc.), swift-collections and swift-syntax (© Apple Inc. and the Swift project authors) are under the Apache License, Version 2.0, reproduced below under SQLitePCLRaw. Realm is used only to import data from Clipy 1.x.
+
+SwiftLint (MIT, © 2020 Realm Inc.) and swift-snapshot-testing (MIT, © 2019 Point-Free, Inc.) are used only to build and test, and are not shipped.
+
+## macOS: TweetNaCl
+
+The edwards25519 arithmetic in `macos/Clipy/Sources/Sync/KauriCurve.swift` is ported from TweetNaCl by Daniel J. Bernstein, Bernard van Gastel, Wesley Janssen, Tanja Lange, Peter Schwabe and Sjaak Smetsers, which is in the public domain.
 
 ## .NET runtime and Microsoft.Data.Sqlite
 
