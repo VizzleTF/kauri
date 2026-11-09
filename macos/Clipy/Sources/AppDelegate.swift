@@ -51,8 +51,6 @@ class AppDelegate: NSObject, NSMenuItemValidation {
     private var pasteService
     @Dependency(\.menuManager)
     private var menuManager
-    @Dependency(\.sparkle)
-    private var sparkle
 
     @Shared(.isLaunchAtLogin)
     private var isLaunchAtLogin
@@ -150,6 +148,14 @@ extension AppDelegate: NSApplicationDelegate {
 
         AppMigrator().run()
 
+        #if DEBUG
+        // Sync test mode: no clipboard monitoring and no prompts, see KauriSync.
+        if KauriSync.testEnvironment != nil {
+            KauriSync.shared.startForTest()
+            return
+        }
+        #endif
+
         // SDKs
         firebase.configure()
         // Check Accessibility Permission
@@ -162,9 +168,6 @@ extension AppDelegate: NSApplicationDelegate {
             promptToAddLoginItems()
         }
 
-        // Sparkle
-        sparkle.configure()
-
         // Binding Events
         bind()
 
@@ -174,6 +177,8 @@ extension AppDelegate: NSApplicationDelegate {
 
         // Managers
         menuManager.setup()
+        // Kauri Sync
+        KauriSync.shared.start()
         // Screenshot
         screenshotObserver.delegate = self
     }

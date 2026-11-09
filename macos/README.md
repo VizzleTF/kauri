@@ -1,85 +1,52 @@
-<div align="center">
-  <img src="./Resources/clipy_logo.png" width="400">
-</div>
+# Kauri Clip for macOS
 
-<br>
+A fork of [Clipy](https://github.com/Clipy/Clipy) 1.4.0, imported with its git history. It needs macOS 13 or later.
 
-![CI](https://github.com/Clipy/Clipy/workflows/CI/badge.svg)
-[![Release version](https://img.shields.io/github/release/Clipy/Clipy.svg)](https://github.com/Clipy/Clipy/releases/latest)
-[![OpenCollective](https://opencollective.com/clipy/backers/badge.svg)](#backers)
-[![OpenCollective](https://opencollective.com/clipy/sponsors/badge.svg)](#sponsors)
+## What differs from Clipy
 
-Clipy is a Clipboard extension app for macOS.
+- **Name and identity.** The app is Kauri Clip (`Kauri.app`), bundle ID `io.github.vizzletf.kauri`, with the icons from [`branding/`](../branding). Its data lives in `~/Library/Application Support/io.github.vizzletf.kauri`, apart from Clipy's.
+- **Removed.** Firebase analytics and crash reporting, the Sparkle updater (its feed and key were Clipy's), and the Donate pane.
+- **Added: Sync.** A Sync pane in Settings syncs snippets and folders, and clipboard history if you turn it on, with the Windows app and other Macs through a [kauri-sync](https://github.com/VizzleTF/kauri-sync) server. Everything is encrypted on the Mac first; see [docs/sync.md](../docs/sync.md).
+- **Added: About pane** with the version and links to this project and to Clipy.
 
----
+The Swift module is still called `Clipy`, and so are the project, the scheme and the folders, which keeps upstream changes easy to merge.
 
-__Requirement__: macOS 13 Ventura or later
+## Build
 
-__Distribution Site__ : <https://clipy-app.com>
+1. Open `Clipy.xcodeproj` in Xcode 26.
+2. Build the `Clipy` scheme. It is ad-hoc signed by default.
 
-<img src="http://clipy-app.com/img/screenshot1.png" width="400">
+macOS ties the Accessibility permission to the code signature, so with ad-hoc signing it asks again after every build. To avoid that, set your own Developer ID in `Configurations/CodeSigning.xcconfig`.
 
-### Keyboard Shortcuts
+## Test
 
-Use these default shortcuts while Clipy is running:
+```bash
+xcodebuild -project Clipy.xcodeproj -scheme Clipy -skipPackagePluginValidation -skipMacroValidation test
+```
 
-| Action | Default shortcut | Usage |
-| --- | --- | --- |
-| Main menu | ⇧⌘V (Shift + Command + V) | Open the main menu to access clipboard history, snippets, and settings. |
-| History | ⌃⌘V (Control + Command + V) | Open clipboard history to select a previously copied item. |
-| Snippets | ⇧⌘B (Shift + Command + B) | Open the snippets menu to select a saved snippet. |
-| Settings | ⌃⌥⇧⌘V (Control + Option + Shift + Command + V) | Open Settings, including when the menu bar icon is hidden or you cannot open the menu. |
+The test target builds with Xcode 26.5, as in CI. Xcode 27 fails with "Multiple commands produce IssueReporting…", because two packages export an `IssueReporting` framework.
 
-You can change these shortcuts in **Settings > Shortcuts**. The Settings shortcut can be changed but cannot be removed, so you can still access Settings after removing the other shortcuts.
+The sync code also has a check that needs only the Swift toolchain. It runs the test vectors from [`docs/sync-vectors/v1.json`](../docs/sync-vectors/v1.json) and the merge and ordering rules:
 
-### Development Environment
-* macOS 26 Tahoe
-* Xcode 26.5
+```bash
+sh scripts/sync_check.sh
+```
 
-### How to Build
-macOS checks Accessibility permission by the app's code signature. If Clipy is built without a stable signing certificate, macOS may ask for Accessibility permission again for every build.
+## Sync code
 
-For this reason, the default signing settings use the Clipy signing certificate. This certificate is available only to the maintainer, so local builds require switching to ad-hoc signing before building.
+| File | What it does |
+|---|---|
+| `Clipy/Sources/Sync/KauriCrypto.swift` | Keys, XChaCha20-Poly1305, envelopes, signed requests, the BIP-39 sync code |
+| `Clipy/Sources/Sync/KauriCurve.swift`, `KauriPairing.swift` | SPAKE2 pairing over edwards25519 (a TweetNaCl port) |
+| `Clipy/Sources/Sync/KauriSyncModel.swift` | Records, hybrid logical clocks, order keys, state and Keychain storage |
+| `Clipy/Sources/Sync/KauriSyncClient.swift` | The HTTP API and Server-Sent Events |
+| `Clipy/Sources/Sync/KauriSync.swift` | Compares the database with the records, merges, pushes and pulls |
+| `Clipy/Sources/Sync/SyncSettingsView.swift` | The Sync pane |
 
-#### Build for ad-hoc usage
-1. Open `Clipy.xcodeproj` in Xcode.
-2. Switch to ad-hoc build mode:
-    1. Open `Configurations/CodeSigning.xcconfig`.
-    2. Uncomment `#include "Configurations/CodeSigning-AdHoc.xcconfig"`.
-3. Build the `Clipy` scheme.
+Sync uses CryptoKit only and adds no package. The chain secret and the device keys are kept in the Keychain, and the sync state in `sync.json` next to the database.
 
-If you want to use Firebase features, place your own `GoogleService-Info.plist` in `Clipy/GoogleService`. This file is not required for local builds without Firebase.
+`scripts/` holds the one-off scripts that turned Clipy into Kauri Clip (`rebrand.py`, `add_sync_to_project.py`, `kauri_strings.py`, `pbxproj_remove.py`), so the same steps can be repeated after merging a new Clipy release.
 
-### Localization Contributors
-Clipy is looking for localization contributors.  
-If you can contribute, please see [CONTRIBUTING.md](https://github.com/Clipy/Clipy/blob/master/.github/CONTRIBUTING.md)
+## License
 
-### Distribution
-If you distribute derived work, especially in the Mac App Store, I ask you to follow two rules:
-
-1. Don't use `Clipy` and `ClipMenu` as your product name.
-2. Follow the MIT license terms.
-
-Thank you for your cooperation.
-
-### Privacy Policy
-Please see [PRIVACY.md](./PRIVACY.md) for information about local data storage,
-network communication, analytics, and crash reporting.
-
-### Backers
-Support us with a monthly donation and help us continue our activities. [[Become a backer](https://opencollective.com/clipy#backer)]
-
-<a href="https://opencollective.com/clipy#backers"><img src="https://opencollective.com/clipy/backers.svg?avatarHeight=36&width=600" /></a>
-
-### Sponsors
-Become a sponsor and get your logo on our README on Github with a link to your site. [[Become a sponsor](https://opencollective.com/clipy#sponsor)]
-
-<a href="https://opencollective.com/clipy#sponsors"><img src="https://opencollective.com/clipy/sponsors.svg?avatarHeight=36&width=600" /></a>
-
-### Licence
-Clipy is available under the MIT license. See the LICENSE file for more info.
-
-Icons are copyrighted by their respective authors.
-
-### Special Thanks
-__Thank you for [@naotaka](https://github.com/naotaka) who have published [ClipMenu](https://github.com/naotaka/ClipMenu) as OSS.__
+MIT, like Clipy and ClipMenu. See [LICENSE](LICENSE), [LICENSE_CLIPMENU](LICENSE_CLIPMENU) and [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md). Clipy's authors ask that derived work not be called Clipy or ClipMenu, which is why this one is Kauri Clip.

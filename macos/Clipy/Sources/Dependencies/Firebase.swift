@@ -9,11 +9,12 @@
 //
 //  Copyright © 2015-2026 Clipy Project.
 //
+//  Kauri Clip: analytics and crash reporting are removed. The dependency stays
+//  as a no-op so callers need no changes.
+//
 
 import Dependencies
 import DependenciesMacros
-import Firebase
-import Sharing
 
 @DependencyClient
 struct Firebase {
@@ -23,23 +24,6 @@ struct Firebase {
     enum Event {
         case popUpMenu(MenuType)
         case popUpSnippetFolderMenu
-
-        var name: String {
-            switch self {
-            case .popUpMenu:
-                return "pop_up_menu"
-            case .popUpSnippetFolderMenu:
-                return "pop_up_snippet_folder_menu"
-            }
-        }
-        var parameters: [String: Any]? {
-            switch self {
-            case .popUpMenu(let type):
-                return ["type": type.rawValue]
-            case .popUpSnippetFolderMenu:
-                return nil
-            }
-        }
     }
 }
 
@@ -50,37 +34,7 @@ extension DependencyValues {
     }
 
     private enum FirebaseKey: DependencyKey {
-        static let liveValue: Firebase = .init(
-            configure: {
-                @Dependency(\.defaultAppStorage) var appStorage
-                @Shared(.collectsCrashReports) var collectsCrashReports
-
-                appStorage.register(defaults: ["NSApplicationCrashOnExceptions": true])
-                guard
-                    collectsCrashReports,
-                    let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-                    let options = FirebaseOptions(contentsOfFile: path),
-                    FirebaseApp.app() == nil
-                else { return }
-
-                FirebaseApp.configure(options: options)
-            },
-            logEvent: { event in
-                @Shared(.collectsCrashReports) var collectsCrashReports
-
-                guard collectsCrashReports else { return }
-
-                Analytics.logEvent(event.name, parameters: event.parameters)
-            }
-        )
-
-        static var previewValue: Firebase = Firebase(
-            configure: {},
-            logEvent: { _ in }
-        )
-        static var testValue: Firebase = Firebase(
-            configure: {},
-            logEvent: { _ in }
-        )
+        static let liveValue = Firebase(configure: {}, logEvent: { _ in })
+        static let testValue = Firebase(configure: {}, logEvent: { _ in })
     }
 }

@@ -163,6 +163,7 @@ final class PasteboardHistoryRepository: PasteboardHistoryRepositoryProtocol {
     }
 
     func deleteHistory(id: PasteboardHistory.ID) {
+        NotificationCenter.default.post(name: .kauriHistoryDeleted, object: id.rawValue)
         withErrorReporting {
             try database.write { database in
                 try PasteboardHistory

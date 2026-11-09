@@ -376,37 +376,43 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "変更は、次回のClipy起動時に反映されます。使用状況ログに個人情報やコピー内容は含まれません。"
+            "value" : "変更は、次回のKauri起動時に反映されます。使用状況ログに個人情報やコピー内容は含まれません。"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Änderungen werden beim nächsten Start von Clipy wirksam. Nutzungsprotokolle enthalten keine personenbezogenen Daten oder kopierten Inhalte."
+            "value" : "Änderungen werden beim nächsten Start von Kauri wirksam. Nutzungsprotokolle enthalten keine personenbezogenen Daten oder kopierten Inhalte."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le modifiche avranno effetto al prossimo avvio di Clipy. I registri di utilizzo non includono informazioni personali né contenuti copiati."
+            "value" : "Le modifiche avranno effetto al prossimo avvio di Kauri. I registri di utilizzo non includono informazioni personali né contenuti copiati."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "As alterações entram em vigor na próxima vez que o Clipy for iniciado. Os registros de uso não incluem informações pessoais nem conteúdo copiado."
+            "value" : "As alterações entram em vigor na próxima vez que o Kauri for iniciado. Os registros de uso não incluem informações pessoais nem conteúdo copiado."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Зміни набудуть чинності після перезапуску Clipy. Журнали використання не містять особистих даних або скопійованого вмісту."
+            "value" : "Зміни набудуть чинності після перезапуску Kauri. Журнали використання не містять особистих даних або скопійованого вмісту."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改将在下次启动 Clipy 时生效。使用日志不包含个人信息或复制的内容。"
+            "value" : "更改将在下次启动 Kauri 时生效。使用日志不包含个人信息或复制的内容。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes take effect the next time Kauri launches. Usage logs do not include personal information or copied content."
           }
         }
       }
@@ -581,37 +587,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verlauf beim Beenden von Clipy löschen"
+            "value" : "Verlauf beim Beenden von Kauri löschen"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancella la cronologia alla chiusura di Clipy"
+            "value" : "Cancella la cronologia alla chiusura di Kauri"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clipyの終了時に履歴を削除"
+            "value" : "Kauriの終了時に履歴を削除"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Limpar histórico ao encerrar o Clipy"
+            "value" : "Limpar histórico ao encerrar o Kauri"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Очищати історію при виході з Clipy"
+            "value" : "Очищати історію при виході з Kauri"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "退出 Clipy 时清除历史记录"
+            "value" : "退出 Kauri 时清除历史记录"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear history when Kauri quits"
           }
         }
       }
@@ -1074,43 +1086,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle Funktionen von Clipy sind kostenlos, und wir planen nicht, dies zu ändern.\n\nSpenden helfen uns, Clipy weiterzuentwickeln. Wenn du unsere Arbeit unterstützen möchtest, kannst du über eine der folgenden Möglichkeiten spenden."
+            "value" : "Alle Funktionen von Kauri sind kostenlos, und wir planen nicht, dies zu ändern.\n\nSpenden helfen uns, Kauri weiterzuentwickeln. Wenn du unsere Arbeit unterstützen möchtest, kannst du über eine der folgenden Möglichkeiten spenden."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clipy offers all of its features for free, and we have no plans to charge for them.\n\nDonations help us continue developing Clipy. If you'd like to support our work, you can contribute through either of the options below."
+            "value" : "Kauri offers all of its features for free, and we have no plans to charge for them.\n\nDonations help us continue developing Kauri. If you'd like to support our work, you can contribute through either of the options below."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tutte le funzionalità di Clipy sono gratuite e non abbiamo intenzione di renderle a pagamento.\n\nLe donazioni ci aiutano a continuare lo sviluppo di Clipy. Se desideri sostenere il nostro lavoro, puoi contribuire tramite una delle opzioni qui sotto."
+            "value" : "Tutte le funzionalità di Kauri sono gratuite e non abbiamo intenzione di renderle a pagamento.\n\nLe donazioni ci aiutano a continuare lo sviluppo di Kauri. Se desideri sostenere il nostro lavoro, puoi contribuire tramite una delle opzioni qui sotto."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clipyは、すべての機能を無料で提供しています。\n\n今後も有料化の予定はありませんが、継続的な開発を支える寄付を受け付けています。ご協力いただける方は、以下の方法でサポートをお願いいたします。"
+            "value" : "Kauriは、すべての機能を無料で提供しています。\n\n今後も有料化の予定はありませんが、継続的な開発を支える寄付を受け付けています。ご協力いただける方は、以下の方法でサポートをお願いいたします。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todos os recursos do Clipy são gratuitos e não temos planos de torná-los pagos.\n\nAs doações nos ajudam a continuar desenvolvendo o Clipy. Se quiser apoiar nosso trabalho, você pode contribuir por uma das opções abaixo."
+            "value" : "Todos os recursos do Kauri são gratuitos e não temos planos de torná-los pagos.\n\nAs doações nos ajudam a continuar desenvolvendo o Kauri. Se quiser apoiar nosso trabalho, você pode contribuir por uma das opções abaixo."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Усі функції Clipy доступні безкоштовно.\n\nМи не плануємо робити їх платними, але приймаємо пожертви для підтримки подальшої розробки. Якщо ви бажаєте допомогти, скористайтеся одним зі способів підтримки нижче."
+            "value" : "Усі функції Kauri доступні безкоштовно.\n\nМи не плануємо робити їх платними, але приймаємо пожертви для підтримки подальшої розробки. Якщо ви бажаєте допомогти, скористайтеся одним зі способів підтримки нижче."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clipy 的所有功能均免费提供，我们也没有收费的计划。\n\n为了持续开发 Clipy，我们接受捐赠。如果您愿意支持我们的工作，可以通过以下任一方式捐赠。"
+            "value" : "Kauri 的所有功能均免费提供，我们也没有收费的计划。\n\n为了持续开发 Kauri，我们接受捐赠。如果您愿意支持我们的工作，可以通过以下任一方式捐赠。"
           }
         }
       }
@@ -4402,19 +4414,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Löscht den gesamten Verlauf im gewählten Zeitabstand, solange Clipy läuft. Textbausteine werden nicht gelöscht."
+            "value" : "Löscht den gesamten Verlauf im gewählten Zeitabstand, solange Kauri läuft. Textbausteine werden nicht gelöscht."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clears all history at the selected interval while Clipy is running. Snippets are not deleted."
+            "value" : "Clears all history at the selected interval while Kauri is running. Snippets are not deleted."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancella tutta la cronologia all’intervallo selezionato mentre Clipy è in esecuzione. I frammenti non vengono eliminati."
+            "value" : "Cancella tutta la cronologia all’intervallo selezionato mentre Kauri è in esecuzione. I frammenti non vengono eliminati."
           }
         },
         "ja" : {
@@ -4426,19 +4438,19 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Limpa todo o histórico no intervalo selecionado enquanto o Clipy estiver em execução. Os trechos não são excluídos."
+            "value" : "Limpa todo o histórico no intervalo selecionado enquanto o Kauri estiver em execução. Os trechos não são excluídos."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Очищає всю історію через вибраний інтервал, поки Clipy працює. Фрагменти не видаляються."
+            "value" : "Очищає всю історію через вибраний інтервал, поки Kauri працює. Фрагменти не видаляються."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clipy 运行期间，按所选间隔清除全部历史记录。片段不会被删除。"
+            "value" : "Kauri 运行期间，按所选间隔清除全部历史记录。片段不会被删除。"
           }
         }
       }
@@ -4521,6 +4533,482 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "px"
+          }
+        }
+      }
+    },
+    "About" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "О программе"
+          }
+        }
+      }
+    },
+    "Releases…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Releases…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выпуски…"
+          }
+        }
+      }
+    },
+    "Based on:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Based on:"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Основано на:"
+          }
+        }
+      }
+    },
+    "basedOnClipyDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kauri Clip is a fork of Clipy, the clipboard extension app for macOS, under the MIT license."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kauri Clip — форк Clipy, расширения буфера обмена для macOS, по лицензии MIT."
+          }
+        }
+      }
+    },
+    "Clipy on GitHub…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clipy on GitHub…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clipy на GitHub…"
+          }
+        }
+      }
+    },
+    "Sync" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Синхронизация"
+          }
+        }
+      }
+    },
+    "Server:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server:"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервер:"
+          }
+        }
+      }
+    },
+    "Status:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status:"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Состояние:"
+          }
+        }
+      }
+    },
+    "Sync is off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync is off"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Синхронизация выключена"
+          }
+        }
+      }
+    },
+    "Connecting…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключение…"
+          }
+        }
+      }
+    },
+    "Up to date" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to date"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Всё синхронизировано"
+          }
+        }
+      }
+    },
+    "Syncing…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Syncing…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Синхронизация…"
+          }
+        }
+      }
+    },
+    "Offline, will retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline, will retry"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет связи, повторим позже"
+          }
+        }
+      }
+    },
+    "Start Sync…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Sync…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включить синхронизацию…"
+          }
+        }
+      }
+    },
+    "Join with a Pairing Code…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Join with a Pairing Code…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключить по коду…"
+          }
+        }
+      }
+    },
+    "Join with the Sync Code…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Join with the Sync Code…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключить по 24 словам…"
+          }
+        }
+      }
+    },
+    "Turn Off Sync…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Off Sync…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключить синхронизацию…"
+          }
+        }
+      }
+    },
+    "What syncs:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What syncs:"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Что синхронизировать:"
+          }
+        }
+      }
+    },
+    "Snippets and folders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snippets and folders"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сниппеты и папки"
+          }
+        }
+      }
+    },
+    "syncHistoryDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text only, up to 500 items. Confidential content and excluded apps are never synced."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Только текст, до 500 записей. Конфиденциальное содержимое и исключённые приложения не синхронизируются."
+          }
+        }
+      }
+    },
+    "Devices:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devices:"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Устройства:"
+          }
+        }
+      }
+    },
+    "This Mac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот Mac"
+          }
+        }
+      }
+    },
+    "Add a Device…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a Device…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добавить устройство…"
+          }
+        }
+      }
+    },
+    "Show Sync Code…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Sync Code…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показать 24 слова…"
+          }
+        }
+      }
+    },
+    "syncDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything is encrypted on this Mac before it leaves. The server sees neither your snippets nor their titles."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Всё шифруется на этом Mac до отправки. Сервер не видит ни сниппеты, ни их названия."
+          }
+        }
+      }
+    },
+    "Not post-quantum" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not post-quantum"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Без постквантовой защиты"
+          }
+        }
+      }
+    },
+    "syncHistoryToggle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clipboard history"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "История буфера обмена"
+          }
+        }
+      }
+    },
+    "removeDeviceButton" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удалить…"
           }
         }
       }

@@ -19,8 +19,6 @@ struct GeneralSettingsView: View {
     private var historyClearInterval
     @Shared(.statusItemDisplayMode)
     private var statusItemDisplayMode
-    @Shared(.collectsCrashReports)
-    private var collectsCrashReports
 
     var body: some View {
         SettingsGrid {
@@ -81,7 +79,7 @@ struct GeneralSettingsView: View {
                     .settingDescription()
             }
 
-            SettingsSection(title: .Settings.menuBarIcon, bottomDivider: true) {
+            SettingsSection(title: .Settings.menuBarIcon) {
                 Picker(
                     .Settings.menuBarIcon,
                     selection: Binding($statusItemDisplayMode)
@@ -97,15 +95,6 @@ struct GeneralSettingsView: View {
                 }
                 .labelsHidden()
                 .fixedSize(horizontal: true, vertical: false)
-            }
-
-            SettingsSection(title: .Settings.diagnostics) {
-                Toggle(
-                    .Settings.sendCrashReportsAndUsageLogs,
-                    isOn: Binding($collectsCrashReports)
-                )
-                Text(.Settings.changesTakeEffectTheNextTimeClipyLaunchesUsageLogsDoNotIncludePersonalInformationOrCopiedContent)
-                    .settingDescription()
             }
         }
     }

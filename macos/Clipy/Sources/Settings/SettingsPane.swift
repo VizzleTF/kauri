@@ -7,9 +7,9 @@ enum SettingsPane: String, CaseIterable {
     case clipboardType
     case excludedApplications
     case shortcuts
-    case updates
+    case sync
     case beta
-    case donate
+    case about
 
     var title: String {
         switch self {
@@ -23,12 +23,12 @@ enum SettingsPane: String, CaseIterable {
             String(localized: .Settings.exclude)
         case .shortcuts:
             String(localized: .Settings.shortcuts)
-        case .updates:
-            String(localized: .Settings.updates)
+        case .sync:
+            String(localized: .Settings.sync)
         case .beta:
             String(localized: .Settings.beta)
-        case .donate:
-            String(localized: .Settings.donate)
+        case .about:
+            String(localized: .Settings.about)
         }
     }
 
@@ -44,12 +44,12 @@ enum SettingsPane: String, CaseIterable {
             "nosign"
         case .shortcuts:
             "keyboard"
-        case .updates:
-            "arrow.triangle.2.circlepath"
+        case .sync:
+            "arrow.triangle.2.circlepath.icloud"
         case .beta:
             "testtube.2"
-        case .donate:
-            "cup.and.saucer"
+        case .about:
+            "info.circle"
         }
     }
 
@@ -80,12 +80,12 @@ enum SettingsPane: String, CaseIterable {
             ExcludedApplicationsSettingsView()
         case .shortcuts:
             ShortcutSettingsView()
-        case .updates:
-            UpdateSettingsView()
+        case .sync:
+            SyncSettingsView()
         case .beta:
             BetaSettingsView()
-        case .donate:
-            DonationSettingsView()
+        case .about:
+            AboutSettingsView()
         }
     }
 }
