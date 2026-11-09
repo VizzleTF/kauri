@@ -42,7 +42,7 @@ Every symmetric ciphertext in this document has the form `seal(key, plaintext, a
 
 **Platform libraries.**
 
-- Windows uses libsodium through NSec, and .NET's `MLKem`.
+- Windows uses libsodium (the official `libsodium` NuGet package) and .NET's `MLKem`, HKDF and DPAPI.
 - macOS uses CryptoKit only: `Curve25519`, `ChaChaPoly`, HKDF and, from macOS 26, `MLKEM768`. XChaCha20 is HChaCha20 in front of `ChaChaPoly`, and the edwards25519 group operations for pairing are a port of TweetNaCl.
 - The reference implementation, and the source of the test vectors, is the Go package `kauri` in kauri-sync.
 
@@ -136,7 +136,7 @@ The fields of each kind:
 |---|---|
 | `folder` | `title`, `enabled`, `order` |
 | `snippet` | `folder` (record ID), `title`, `content`, `enabled`, `order` |
-| `clip` | `types` (list), `title`, `text`, `assets` (list of `{"type", "blob", "size"}`), `created`, `lastUsed` |
+| `clip` | `types` (list), `title`, `text`, `assets` (list of `{"type", "blob", "size"}`), `created` and `lastUsed` (Unix seconds) |
 | `settings` | Settings that make sense on every device: history limit, menu numbering, folder size. Shortcuts, excluded apps and per-device hot keys never sync |
 
 Clients MUST keep fields they don't know and write them back unchanged.

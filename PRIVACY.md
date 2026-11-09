@@ -9,8 +9,8 @@ Kauri Clip keeps your clipboard history and snippets on your device. It sends no
 | Clipboard history: text, rich text, HTML, file paths, images and their thumbnails | `%APPDATA%\Kauri\kauri.db` | `~/Library/Application Support/io.github.vizzletf.kauri/sqlite.db` |
 | Snippets | same file | same file |
 | Settings and shortcuts | `%APPDATA%\Kauri\settings.json` | the app's user defaults |
-| Sync state, if sync is on | — | `sync.json` next to the database |
-| Sync code and device keys, if sync is on | — | the Keychain, this Mac only |
+| Sync state, if sync is on | `%APPDATA%\Kauri\sync.json` | `sync.json` next to the database |
+| Sync code and device keys, if sync is on | `%APPDATA%\Kauri\sync.keys`, encrypted with DPAPI | the Keychain, this Mac only |
 
 Only your user account can read these files. The history and snippets are not encrypted on disk.
 
@@ -22,7 +22,7 @@ Only your user account can read these files. The history and snippets are not en
 
 ## Sync
 
-Sync is off until you turn it on under **Settings → Sync** (macOS now, Windows later). It then talks only to the server you enter.
+Sync is off until you turn it on under **Settings → Sync**. It then talks only to the server you enter.
 
 - Snippets and folders sync. Clipboard history syncs only if you turn it on, and then only text, at most 500 items.
 - Everything is encrypted on your device before it is sent. The server stores ciphertext, padded to fixed sizes, and cannot read titles, contents or device names.
@@ -37,4 +37,4 @@ Kauri Clip contains no analytics, crash reporting, telemetry or update checks. A
 
 ## Removing your data
 
-Choose **Clear History** in the menu to delete the history. To remove everything, turn off sync, quit Kauri Clip and delete its data folder. On a Mac, the Keychain item "Kauri Clip sync keys" goes when you turn off sync.
+Choose **Clear History** in the menu to delete the history. To remove everything, turn off sync, quit Kauri Clip and delete its data folder. Turning off sync deletes the sync keys: `sync.keys` on Windows, the Keychain item "Kauri Clip sync keys" on a Mac.

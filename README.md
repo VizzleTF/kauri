@@ -8,7 +8,7 @@ This repository holds every platform:
 
 | Folder | What it is | Status |
 |---|---|---|
-| [`windows/`](windows) | Windows 10 and 11 app (WPF, .NET 10) | Works, no sync yet |
+| [`windows/`](windows) | Windows 10 and 11 app (WPF, .NET 10) | Works, with sync |
 | [`macos/`](macos) | macOS app (Swift, a fork of Clipy 1.4) | Works, with sync |
 | [`docs/sync.md`](docs/sync.md) | Kauri Sync protocol and test vectors, shared by all clients | v1, server implemented |
 | [`branding/`](branding) | App and tray icons | |
@@ -28,7 +28,7 @@ The sync server lives in its own repository, [kauri-sync](https://github.com/Viz
   | Snippets | Ctrl+Shift+B | Shift+Cmd+B |
 
   On top of that: paste as plain text, delete from history, excluded apps, and skipping content that apps mark as confidential, such as passwords.
-- **Sync (macOS now, Windows next):** snippets, and if you turn it on, text history.
+- **Sync:** snippets, and if you turn it on, text history, between Windows and macOS.
   - Encrypted on the device, so the server cannot read it.
   - No account: a 24-word sync code, or a 12-character pairing code from a device that is already in, confirmed by a 4-digit number on both screens.
   - Updates arrive within a second.
