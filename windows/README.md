@@ -1,6 +1,12 @@
-# Kauri Clip for Windows
+<p align="center">
+  <img src="../branding/kauri-icon-256.png" width="96" alt="Kauri Clip icon">
+</p>
 
-This folder holds the Windows app: `Kauri.exe`, built with WPF on .NET 10. It keeps Clipy's menu, settings and snippet editor, and draws them in the Windows 11 style. It uses Segoe UI Variable, Fluent icons, native title bars and your accent colour, and switches between light and dark with Windows.
+<h1 align="center">Kauri Clip for Windows</h1>
+
+<p align="center">The Windows 10 and 11 app, built with WPF on .NET 10.</p>
+
+`Kauri.exe` keeps Clipy's menu, settings and snippet editor, and draws them in the Windows 11 style. It uses Segoe UI Variable, Fluent icons, native title bars and your accent colour, and switches between light and dark with Windows.
 
 ## Run
 

@@ -1,6 +1,10 @@
-# Kauri Clip for macOS
+<p align="center">
+  <img src="../branding/kauri-icon-256.png" width="96" alt="Kauri Clip icon">
+</p>
 
-A fork of [Clipy](https://github.com/Clipy/Clipy) 1.4.0, imported with its git history. It needs macOS 13 or later.
+<h1 align="center">Kauri Clip for macOS</h1>
+
+<p align="center">The macOS app: a fork of Clipy 1.4.0 with Kauri Sync, for macOS 13 or later.</p>
 
 ## What differs from Clipy
 
@@ -9,7 +13,7 @@ A fork of [Clipy](https://github.com/Clipy/Clipy) 1.4.0, imported with its git h
 - **Added: Sync.** A Sync pane in Settings syncs snippets and folders, and clipboard history if you turn it on, with the Windows app and other Macs through a [kauri-sync](https://github.com/VizzleTF/kauri-sync) server. Everything is encrypted on the Mac first; see [docs/sync.md](../docs/sync.md).
 - **Added: About pane** with the version and links to this project and to Clipy.
 
-The Swift module is still called `Clipy`, and so are the project, the scheme and the folders, which keeps upstream changes easy to merge.
+The Swift module is still called `Clipy`, and so are the project, the scheme and the folders, so a new Clipy release merges without renames.
 
 ## Build
 

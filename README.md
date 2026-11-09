@@ -1,46 +1,37 @@
-# Kauri Clip
+<p align="center">
+  <img src="branding/kauri-icon-256.png" width="112" alt="Kauri Clip icon">
+</p>
 
-<img src="branding/kauri-icon-256.png" width="96" alt="Kauri Clip icon">
+<h1 align="center">Kauri Clip</h1>
 
-Kauri Clip keeps your clipboard history and saved snippets, and pastes them from a menu that you open with a shortcut. It is a port of [Clipy](https://github.com/Clipy/Clipy) to Windows and back to macOS, with end-to-end encrypted sync between your devices.
+<p align="center">Clipboard history and snippets for Windows and macOS, with end-to-end encrypted sync between them.</p>
 
-This repository holds every platform:
+Kauri Clip keeps what you copy and the text you reuse, and pastes either from a menu that opens at a shortcut. It is a port of [Clipy](https://github.com/Clipy/Clipy) to Windows, and a fork of Clipy on macOS.
 
-| Folder | What it is | Status |
+## Install
+
+| Platform | Requirement | Download |
 |---|---|---|
-| [`windows/`](windows) | Windows 10 and 11 app (WPF, .NET 10) | Works, with sync |
-| [`macos/`](macos) | macOS app (Swift, a fork of Clipy 1.4) | Works, with sync |
-| [`docs/sync.md`](docs/sync.md) | Kauri Sync protocol and test vectors, shared by all clients | v1, server implemented |
-| [`branding/`](branding) | App and tray icons | |
+| Windows | Windows 10 or 11, x64 | `Kauri.exe` from the `Kauri-win-x64` artifact of the [windows workflow](https://github.com/VizzleTF/kauri/actions/workflows/windows.yml) |
+| macOS | macOS 13 or later | `Kauri-macOS.zip` from the `Kauri-macOS` artifact of the [macos workflow](https://github.com/VizzleTF/kauri/actions/workflows/macos.yml) |
 
-The sync server lives in its own repository, [kauri-sync](https://github.com/VizzleTF/kauri-sync).
+`Kauri.exe` is one self-contained file. The macOS build is ad-hoc signed: open it the first time with right-click → **Open**, then allow it under **Privacy & Security → Accessibility**.
 
-## Features
+## First use
 
-- **Clipboard history:** grouped into folders of 10, numbered, with tooltips, image thumbnails and colour previews. Sorted by last use or by date.
-- **Snippets:** folders of reusable text. Each folder can have its own shortcut. You can drag and drop them and import or export them as XML compatible with Clipy.
-- **Shortcuts:**
+Copy two pieces of text, then press **Ctrl+Shift+V** on Windows or **Shift+Cmd+V** on a Mac. The menu opens with both items numbered; choose one and Kauri Clip pastes it.
 
-  | Action | Windows | Mac |
-  |---|---|---|
-  | Main menu | Ctrl+Shift+V | Shift+Cmd+V |
-  | History | Ctrl+Win+V | Control+Cmd+V |
-  | Snippets | Ctrl+Shift+B | Shift+Cmd+B |
+To sync, run a [kauri-sync](https://github.com/VizzleTF/kauri-sync) server. Then choose **Settings → Sync → Start Sync** on one device and **Join with a Pairing Code** on the others.
 
-  On top of that: paste as plain text, delete from history, excluded apps, and skipping content that apps mark as confidential, such as passwords.
-- **Sync:** snippets, and if you turn it on, text history, between Windows and macOS.
-  - Encrypted on the device, so the server cannot read it.
-  - No account: a 24-word sync code, or a 12-character pairing code from a device that is already in, confirmed by a 4-digit number on both screens.
-  - Updates arrive within a second.
-  - Removing a lost device re-keys everything. See [docs/sync.md](docs/sync.md).
+## Links
 
-## Download
-
-| Platform | Get it |
+| Page | What it covers |
 |---|---|
-| Windows (x64) | Build from [`windows/`](windows), or take `Kauri.exe` from the Actions artifacts |
-| macOS 13+ | Build from [`macos/`](macos), or take `Kauri-macOS.zip` from the Actions artifacts (ad-hoc signed) |
+| [windows/](windows) | Build and layout of the Windows app |
+| [macos/](macos) | Build, tests and changes from Clipy |
+| [docs/sync.md](docs/sync.md) | Sync protocol v1, with [test vectors](docs/sync-vectors) |
+| [kauri-sync](https://github.com/VizzleTF/kauri-sync) | The sync server |
+| [PRIVACY.md](PRIVACY.md) | What is stored where, and what the server sees |
+| [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Licenses of Clipy, ClipMenu and the libraries |
 
-## License and credits
-
-Kauri Clip is released under the [MIT License](LICENSE). It is based on [Clipy](https://github.com/Clipy/Clipy) (MIT, © Clipy Project), which in turn is based on ClipMenu (MIT, © Naotaka Morimoto). Clipy's authors ask that derived work not use the names "Clipy" or "ClipMenu", which is why this project has its own name. For the full license texts, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). For what is stored where, see [PRIVACY.md](PRIVACY.md).
+Kauri Clip is under the [MIT License](LICENSE). Clipy's authors ask that derived work not be called Clipy or ClipMenu, so this project has its own name.
