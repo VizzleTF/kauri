@@ -414,7 +414,7 @@ public sealed class MacMenuWindow : Window
         };
         if (parent == null)
         {
-            Deactivated += (_, _) => CloseAll();
+            Deactivated += (_, _) => OnDeactivated();
             PreviewKeyDown += OnKeyDown;
             TextInput += OnTextInput;
         }
@@ -459,13 +459,19 @@ public sealed class MacMenuWindow : Window
         if (size.Height > wa.Height) View.Height = wa.Height;
         Left = x - ShadowPad;
         Top = y - ShadowPad;
-        Show();
         if (_parent == null)
         {
-            Native.ForceForeground(new WindowInteropHelper(this).Handle);
+            // Take the foreground before the window appears, so a refused activation
+            // cannot make the menu flash and close.
+            var hwnd = new WindowInteropHelper(this).EnsureHandle();
+            _shownAt = DateTime.UtcNow;
+            Show();
+            Native.ForceForeground(hwnd);
             Activate();
             Focus();
+            StartClickOutsideWatch();
         }
+        else Show();
         if (highlightFirst) SelectFirst();
         else if (selectIndex >= 0) View.SetSelected(selectIndex);
     }
@@ -556,6 +562,62 @@ public sealed class MacMenuWindow : Window
         _child.Close();
         _child = null;
         _childIndex = -1;
+    }
+
+    DateTime _shownAt;
+    int _reclaims;
+    System.Windows.Threading.DispatcherTimer? _outsideWatch;
+
+    /// <summary>
+    /// If the menu never got the activation, a click elsewhere sends it no Deactivated:
+    /// watch for that click instead.
+    /// </summary>
+    void StartClickOutsideWatch()
+    {
+        _outsideWatch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+        _outsideWatch.Tick += (_, _) =>
+        {
+            if (_closing) { _outsideWatch.Stop(); return; }
+            if (IsActive) return;
+            if (!Native.IsMouseButtonDown())
+            {
+                // Still not in front shortly after the hot key: keep asking for the foreground.
+                if ((DateTime.UtcNow - _shownAt).TotalMilliseconds < 1500)
+                {
+                    Native.ForceForeground(new WindowInteropHelper(this).Handle);
+                    Activate();
+                }
+                return;
+            }
+            for (var m = this; m != null; m = m._child)
+                if (m.IsMouseOver) return;
+            CloseAll();
+        };
+        _outsideWatch.Start();
+        Closed += (_, _) => _outsideWatch.Stop();
+    }
+
+    /// <summary>
+    /// Right after a hot key, Windows may hand the activation straight back to the app that had
+    /// it. Losing it then is not the user leaving the menu: take it back, a few times at most.
+    /// Later, or after a click elsewhere, deactivation closes the menu as before.
+    /// </summary>
+    void OnDeactivated()
+    {
+        if (_closing) return;
+        bool justShown = (DateTime.UtcNow - _shownAt).TotalMilliseconds < 800;
+        if (justShown && _reclaims < 3 && !Native.IsMouseButtonDown())
+        {
+            _reclaims++;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (_closing || IsActive) return;
+                Native.ForceForeground(new WindowInteropHelper(this).Handle);
+                Activate();
+            }, System.Windows.Threading.DispatcherPriority.Input);
+            return;
+        }
+        CloseAll();
     }
 
     public void CloseAll()

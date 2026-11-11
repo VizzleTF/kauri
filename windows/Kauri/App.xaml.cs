@@ -28,6 +28,14 @@ public partial class App : Application
             return;
         }
 #if DEBUG
+        if (args.Length > 0 && args[0] == "--focus-dummy") { UI.MenuFocusTest.Dummy(); return; }
+        if (args.Length > 0 && args[0] == "--menu-focus-test")
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            int o = Array.IndexOf(args, "--out");
+            UI.MenuFocusTest.Run(o > 0 && o + 1 < args.Length ? args[o + 1] : "menu-focus.txt", 10);
+            return;
+        }
         // Sync test mode: KAURI_SYNC_TEST_SERVER and KAURI_SYNC_TEST_WORDS join that chain.
         // No single-instance lock, clipboard monitoring, hot keys or tray icon.
         if (Environment.GetEnvironmentVariable("KAURI_SYNC_TEST_SERVER") is string testServer &&

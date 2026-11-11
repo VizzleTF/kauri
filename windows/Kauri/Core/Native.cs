@@ -49,6 +49,10 @@ internal static partial class Native
     public static partial IntPtr GetClipboardOwner();
 
     [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool BringWindowToTop(IntPtr hWnd);
+
+    [LibraryImport("user32.dll")]
     public static partial short GetAsyncKeyState(int vKey);
 
     [LibraryImport("user32.dll", SetLastError = true)]
@@ -139,16 +143,28 @@ internal static partial class Native
         finally { CloseHandle(h); }
     }
 
-    /// <summary>Reliably bring a window to the foreground from a background tray process.</summary>
-    public static void ForceForeground(IntPtr hwnd)
+    /// <summary>
+    /// Bring a window to the foreground from a background tray process. Returns whether it is
+    /// the foreground window afterwards.
+    /// </summary>
+    public static bool ForceForeground(IntPtr hwnd)
     {
-        if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return;
+        if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return false;
         var fg = GetForegroundWindow();
-        if (fg == hwnd) return;
+        if (fg == hwnd) return true;
         var fgThread = GetWindowThreadProcessId(fg, out _);
         var me = GetCurrentThreadId();
-        if (fgThread != me) AttachThreadInput(me, fgThread, true);
+        bool attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
+        BringWindowToTop(hwnd);
         SetForegroundWindow(hwnd);
-        if (fgThread != me) AttachThreadInput(me, fgThread, false);
+        if (attached) AttachThreadInput(me, fgThread, false);
+        if (GetForegroundWindow() == hwnd) return true;
+        // Windows grants the foreground to the process that sent the last input. A key-up of an
+        // unassigned key is that input and does nothing else, even with Ctrl or Shift still held.
+        SendInput(1, [Key(0xE8, up: true)], System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
+        SetForegroundWindow(hwnd);
+        return GetForegroundWindow() == hwnd;
     }
+
+    public static bool IsMouseButtonDown() => IsKeyDown(0x01) || IsKeyDown(0x02) || IsKeyDown(0x04);
 }
