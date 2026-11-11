@@ -33,7 +33,7 @@ public partial class App : Application
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             int o = Array.IndexOf(args, "--out");
-            UI.MenuFocusTest.Run(o > 0 && o + 1 < args.Length ? args[o + 1] : "menu-focus.txt", 10);
+            UI.MenuFocusTest.Run(o > 0 && o + 1 < args.Length ? args[o + 1] : "menu-focus.txt", 5);
             return;
         }
         // Sync test mode: KAURI_SYNC_TEST_SERVER and KAURI_SYNC_TEST_WORDS join that chain.

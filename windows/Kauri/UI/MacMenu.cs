@@ -469,7 +469,7 @@ public sealed class MacMenuWindow : Window
             Native.ForceForeground(hwnd);
             Activate();
             Focus();
-            StartClickOutsideWatch();
+            StartOutsideWatch();
         }
         else Show();
         if (highlightFirst) SelectFirst();
@@ -566,35 +566,67 @@ public sealed class MacMenuWindow : Window
 
     DateTime _shownAt;
     int _reclaims;
-    System.Windows.Threading.DispatcherTimer? _outsideWatch;
+    System.Windows.Threading.DispatcherTimer? _foregroundRetry;
+    IntPtr _mouseHook;
+    Native.HookProc? _mouseHookProc; // kept alive while the hook is installed
+    bool _clickedOutside;
+    /// <summary>Debug tests: why the menu closed.</summary>
+    public static Action<string>? Trace;
 
     /// <summary>
-    /// If the menu never got the activation, a click elsewhere sends it no Deactivated:
-    /// watch for that click instead.
+    /// Closes the menu on any mouse press outside its windows, as a system menu does, whether or
+    /// not it holds the activation. Also keeps asking for the foreground shortly after the hot key.
     /// </summary>
-    void StartClickOutsideWatch()
+    void StartOutsideWatch()
     {
-        _outsideWatch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
-        _outsideWatch.Tick += (_, _) =>
+        _mouseHookProc = (code, wParam, lParam) =>
         {
-            if (_closing) { _outsideWatch.Stop(); return; }
-            if (IsActive) return;
-            if (!Native.IsMouseButtonDown())
+            int msg = (int)wParam;
+            if (code >= 0 && msg is Native.WM_LBUTTONDOWN or Native.WM_RBUTTONDOWN or Native.WM_MBUTTONDOWN or Native.WM_XBUTTONDOWN)
             {
-                // Still not in front shortly after the hot key: keep asking for the foreground.
-                if ((DateTime.UtcNow - _shownAt).TotalMilliseconds < 1500)
+                var pt = System.Runtime.InteropServices.Marshal.PtrToStructure<Native.POINT>(lParam);
+                if (!ContainsScreenPoint(pt))
                 {
-                    Native.ForceForeground(new WindowInteropHelper(this).Handle);
-                    Activate();
+                    if (Trace != null && Native.GetWindowRect(new WindowInteropHelper(this).Handle, out var tr))
+                        Trace($"click outside at {pt.X},{pt.Y}, menu window {tr.Left},{tr.Top}-{tr.Right},{tr.Bottom}");
+                    _clickedOutside = true;
+                    Dispatcher.BeginInvoke(CloseAll);
                 }
-                return;
             }
-            for (var m = this; m != null; m = m._child)
-                if (m.IsMouseOver) return;
-            CloseAll();
+            return Native.CallNextHookEx(_mouseHook, code, wParam, lParam);
         };
-        _outsideWatch.Start();
-        Closed += (_, _) => _outsideWatch.Stop();
+        _mouseHook = Native.SetWindowsHookExW(Native.WH_MOUSE_LL, _mouseHookProc, Native.GetModuleHandleW(null), 0);
+
+        _foregroundRetry = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+        _foregroundRetry.Tick += (_, _) =>
+        {
+            if (_closing || (DateTime.UtcNow - _shownAt).TotalMilliseconds > 1500) { _foregroundRetry.Stop(); return; }
+            if (IsActive || _clickedOutside) return;
+            Native.ForceForeground(new WindowInteropHelper(this).Handle);
+            Activate();
+        };
+        _foregroundRetry.Start();
+        Closed += (_, _) =>
+        {
+            _foregroundRetry.Stop();
+            if (_mouseHook != IntPtr.Zero) Native.UnhookWindowsHookEx(_mouseHook);
+            _mouseHook = IntPtr.Zero;
+        };
+    }
+
+    /// <summary>True if the screen point (physical pixels) is inside this menu or one of its submenus.</summary>
+    bool ContainsScreenPoint(Native.POINT pt)
+    {
+        for (var m = this; m != null; m = m._child)
+        {
+            var hwnd = new WindowInteropHelper(m).Handle;
+            if (hwnd == IntPtr.Zero || !Native.GetWindowRect(hwnd, out var r)) continue;
+            // The window includes a transparent margin for the shadow; it is not part of the menu.
+            int pad = (int)(ShadowPad * VisualTreeHelper.GetDpi(m).DpiScaleX);
+            if (pt.X >= r.Left + pad && pt.X < r.Right - pad && pt.Y >= r.Top + pad && pt.Y < r.Bottom - pad)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -606,7 +638,7 @@ public sealed class MacMenuWindow : Window
     {
         if (_closing) return;
         bool justShown = (DateTime.UtcNow - _shownAt).TotalMilliseconds < 800;
-        if (justShown && _reclaims < 3 && !Native.IsMouseButtonDown())
+        if (justShown && _reclaims < 3 && !_clickedOutside && !Native.IsMouseButtonDown())
         {
             _reclaims++;
             Dispatcher.BeginInvoke(() =>
@@ -617,6 +649,7 @@ public sealed class MacMenuWindow : Window
             }, System.Windows.Threading.DispatcherPriority.Input);
             return;
         }
+        Trace?.Invoke($"deactivated after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms, foreground {Native.GetForegroundWindow()}");
         CloseAll();
     }
 
