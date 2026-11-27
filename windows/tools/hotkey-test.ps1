@@ -151,6 +151,7 @@ foreach ($clip in "first clip", "second clip") {
     foreach ($keys in $clip, "^a", "^c", "{DELETE}") {
         [System.Windows.Forms.SendKeys]::SendWait($keys)
         Start-Sleep -Milliseconds 150
+        if ($keys -eq "^c") { $log.Add("copied from target: '$([W]::EditText($appWindow))'") }
     }
     Start-Sleep -Milliseconds 400
 }
