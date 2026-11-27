@@ -29,7 +29,7 @@ dotnet publish windows/Kauri -c Release -r win-x64 --self-contained true -p:Publ
 | `Kauri/Sync` | Kauri Sync ([docs/sync.md](../docs/sync.md)): crypto on libsodium and .NET, the HTTP client, the sync engine |
 | `Kauri/DevTools.cs` | `Kauri.exe --render <screen>` draws a screen to PNG for UI review. `--render selftest` opens the real windows and snapshots them |
 | `tools/render.sh` | Renders every screen in light and dark |
-| `tools/hotkey-test.ps1` | Presses the menu shortcut over Notepad or Edge and checks that the menu stays open, takes keys and pastes |
+| `tools/hotkey-test.ps1` (in `windows/`) | Presses the menu shortcut over Notepad or Edge and checks that the menu stays open, takes keys and pastes |
 | `tools/make_icons.py` | Builds the `.ico` and tray glyphs from the artwork in `branding/` |
 
 To render screens without touching your own history, set `KAURI_DATA_DIR` to another folder.
@@ -38,28 +38,33 @@ To render screens without touching your own history, set `KAURI_DATA_DIR` to ano
 
 The menu opens with **Ctrl+Shift+V**. Snippets open with **Ctrl+Shift+B**. Change either under **Settings → Shortcuts**.
 
-**The shortcut does nothing.** Another app may hold it. Windows then refuses it, and Kauri Clip shows a tray notification such as "Ctrl+Shift+V is taken by another app"; the tray icon's tooltip keeps saying so. Pick another shortcut under **Settings → Shortcuts**.
+**The shortcut does nothing.**
 
-**The menu flashes and closes, or you need a log to send.** Quit Kauri Clip from its tray menu, then start it from PowerShell with a trace file:
+1. Hover the tray icon. If its tooltip says a shortcut is "taken by another app", another app holds it and Windows refused it; Kauri Clip also showed a notification when this happened. The shortcut stays dead until you pick another one under **Settings → Shortcuts**.
+2. If the tooltip names nothing, collect a trace (next entry) and send it.
+
+**The menu flashes and closes, or you need a log to send.** Quit Kauri Clip from its tray menu, then start it from PowerShell with a trace file. The variable applies only to this PowerShell window:
 
 ```powershell
 $env:KAURI_TRACE = "$env:TEMP\kauri-trace.txt"
-& "C:\path\to\Kauri.exe"
+& "<path to your Kauri.exe>"
 ```
 
 Press the shortcut, then attach `%TEMP%\kauri-trace.txt`. The trace is appended to and records each shortcut press, refused shortcuts, which app was in front, and when and why the menu closed.
 
-**The app you were typing in keeps its focus while the menu is open.** This is intended. The menu never takes the activation, so Windows cannot refuse it and paste goes straight back to that app. While the menu is open it reads keys and mouse clicks through low-level hooks, as a system menu does. It takes only the keys it uses: arrows, Enter, Space, Esc, digits and letters. Modifiers, Caps Lock, media keys and Kauri's own shortcuts pass through. Alt+Tab, Win+D and other Alt or Win combinations close the menu and then work as usual, and so does any other window coming to the front.
+**The app you were typing in keeps its focus while the menu is open.** This is intended. The menu never activates its own window, so Windows cannot refuse it and paste goes straight back to your app. While the menu is open it reads keys and mouse clicks through low-level hooks, as a system menu does. It takes only the keys it uses: arrows, Enter, Space, Esc, digits and letters. Modifiers, Caps Lock, media keys and Kauri's own shortcuts still reach Windows.
 
-Over an app running as administrator, Windows does not pass its input to Kauri's hooks, so there the menu takes the activation instead. Auto-paste into such an app needs Kauri Clip to run as administrator too.
+**Alt+Tab and Win+D work while the menu is open.** They close the menu first. So does any other window coming to the front.
 
-**Check the shortcut on your own PC.** From the repository root, after the build above:
+**Exception: apps running as administrator.** Windows does not pass their input to Kauri's hooks, so over such an app the menu activates its own window and takes the focus. Auto-paste into it needs Kauri Clip to run as administrator too.
+
+**Check the shortcut on your own PC.** You need the .NET 10 SDK and PowerShell 7 (`pwsh`). From the repository root, build `dist\Kauri.exe` with the command under Build, quit your own Kauri Clip, then run:
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File windows\tools\hotkey-test.ps1 -Exe dist\Kauri.exe -Target notepad
 ```
 
-`-Target edge` uses Microsoft Edge instead of Notepad. Quit your own Kauri Clip first: the test starts `dist\Kauri.exe` with an empty data folder and presses keys and clicks for about 30 seconds. It prints one line per round and ends with `0 failed check(s)`. The [windows-hotkey](../.github/workflows/windows-hotkey.yml) workflow runs it on every pull request.
+`-Target edge` uses Microsoft Edge instead of Notepad. The test starts `dist\Kauri.exe` with an empty data folder, then presses keys and clicks for about 30 seconds: don't touch the keyboard or mouse meanwhile. It prints one line per round and ends with `0 failed check(s)`. On failure, send its output; it includes the trace. The [windows-hotkey](../.github/workflows/windows-hotkey.yml) workflow runs it on every pull request.
 
 ## Sync
 
