@@ -163,7 +163,8 @@ public sealed class ClipService
     void OnClipboardChanged()
     {
         if (_ignoreNext > 0) { _ignoreNext--; return; }
-        try { Create(); } catch { /* clipboard can be locked by other apps */ }
+        try { Create(); }
+        catch (Exception e) { Kauri.UI.MacMenuWindow.Trace?.Invoke($"clipboard not read: {e.Message}"); } // clipboard can be locked by other apps
     }
 
     void Create()
@@ -182,6 +183,7 @@ public sealed class ClipService
         }
         if (data == null) return;
         var content = Read(data, s);
+        Kauri.UI.MacMenuWindow.Trace?.Invoke($"clipboard changed: {(content == null ? "nothing to keep" : string.Join(", ", content.Types))}");
         if (content == null) return;
         Save(content);
     }

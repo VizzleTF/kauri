@@ -58,6 +58,12 @@ public partial class App : Application
             return;
         }
 
+        if (Environment.GetEnvironmentVariable("KAURI_TRACE") is { Length: > 0 } tracePath)
+            MacMenuWindow.Trace = m =>
+            {
+                try { System.IO.File.AppendAllText(tracePath, $"{DateTime.Now:HH:mm:ss.fff} {m}\n"); }
+                catch (System.IO.IOException) { }
+            };
         AppSettings.Load();
         Database.Open();
         Theme.Watch();
@@ -73,9 +79,18 @@ public partial class App : Application
         Kauri.Sync.SyncEngine.Shared.Removed += () => Dispatcher.BeginInvoke(() =>
             MacAlert.Show("This PC was removed from sync.", "Another device removed it. Your snippets stay on this PC.", new[] { "OK" }));
         Kauri.Sync.SyncEngine.Shared.Start();
+        _tray = new TrayIcon();
+        _tray.Clicked += () => menus.PopUp(MenuType.Main, MenuManager.CursorDip(), anchorBottom: true);
+        HotKeyService.Shared.RefusedChanged += () =>
+        {
+            var refused = HotKeyService.Shared.Refused;
+            if (refused.Count > 0) MacMenuWindow.Trace?.Invoke($"hot keys refused: {string.Join(", ", refused)}");
+            _tray.ShowRefused(refused);
+        };
         HotKeyService.Shared.Setup();
         HotKeyService.Shared.Triggered += a =>
         {
+            MacMenuWindow.Trace?.Invoke($"hot key {a}");
             switch (a)
             {
                 case HotKeyAction.Main: menus.PopUp(MenuType.Main); break;
@@ -87,9 +102,6 @@ public partial class App : Application
             }
         };
         HotKeyService.Shared.FolderTriggered += id => menus.PopUpSnippetFolder(id);
-
-        _tray = new TrayIcon();
-        _tray.Clicked += () => menus.PopUp(MenuType.Main, MenuManager.CursorDip(), anchorBottom: true);
 
         LoginItem.Sync();
         if (!AppSettings.Shared.SuppressLoginItemAlert && !AppSettings.Shared.LaunchAtLogin)

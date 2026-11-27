@@ -49,6 +49,19 @@ public sealed class TrayIcon : IDisposable
         _icon.Visible = true;
     }
 
+    string _refused = "";
+
+    /// <summary>Names refused shortcuts in the tooltip, and in a notification when the list changes.</summary>
+    public void ShowRefused(IReadOnlyList<KeyCombo> combos)
+    {
+        var list = string.Join(", ", combos);
+        var text = list.Length == 0 ? AppInfo.DisplayName : $"{AppInfo.DisplayName}: {list} taken by another app";
+        _icon.Text = text.Length > 127 ? text[..127] : text;
+        if (list.Length > 0 && list != _refused)
+            _icon.ShowBalloonTip(8000, $"{list} {(combos.Count == 1 ? "is" : "are")} taken by another app", "Choose another shortcut in Settings → Shortcuts.", Forms.ToolTipIcon.Warning);
+        _refused = list;
+    }
+
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr h);
 
     /// <summary>Tint a template PNG like macOS does for status bar images.</summary>
