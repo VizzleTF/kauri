@@ -674,6 +674,7 @@ public sealed class MacMenuWindow : Window
         Dispatcher.BeginInvoke(() =>
         {
             if (_closing) return;
+            Trace?.Invoke($"key {key}{(ctrl ? " with Ctrl" : "")}, selected {Deepest.View.SelectedIndex}");
             if (!OnKey(key, ctrl) && !string.IsNullOrEmpty(text)) OnText(text);
         }, DispatcherPriority.Input);
         return true;
