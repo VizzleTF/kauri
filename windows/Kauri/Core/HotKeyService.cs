@@ -7,6 +7,8 @@ public sealed class HotKeyService
     public static HotKeyService Shared { get; } = new();
     public event Action<HotKeyAction>? Triggered;
     public event Action<Guid>? FolderTriggered;
+    /// <summary>Raised when Windows refuses a shortcut, usually because another app holds it.</summary>
+    public event Action<KeyCombo>? RegisterFailed;
     readonly Dictionary<int, Guid> _folderIds = new();
     int _nextFolderId = 100;
     bool _suspended;
@@ -56,10 +58,11 @@ public sealed class HotKeyService
         _nextFolderId = 100;
     }
 
-    static void Register(int id, KeyCombo? combo)
+    void Register(int id, KeyCombo? combo)
     {
         if (combo == null) return;
-        Native.RegisterHotKey(MessageWindow.Shared.Handle, id, combo.Win32Modifiers, (uint)combo.VirtualKey);
+        if (!Native.RegisterHotKey(MessageWindow.Shared.Handle, id, combo.Win32Modifiers, (uint)combo.VirtualKey))
+            RegisterFailed?.Invoke(combo);
     }
 
     public void Change(HotKeyAction action, KeyCombo? combo)

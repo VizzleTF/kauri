@@ -49,6 +49,8 @@ public sealed class TrayIcon : IDisposable
         _icon.Visible = true;
     }
 
+    public void Warn(string title, string text) => _icon.ShowBalloonTip(8000, title, text, Forms.ToolTipIcon.Warning);
+
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr h);
 
     /// <summary>Tint a template PNG like macOS does for status bar images.</summary>

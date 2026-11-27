@@ -340,7 +340,7 @@ public sealed class MacToolTip : ToolTip
             Text = text,
             FontFamily = Theme.Font,
             FontSize = 12,
-            Foreground = Theme.TextPrimary,
+            Foreground = ThemtextPrimary,
             TextWrapping = TextWrapping.Wrap,
             MaxWidth = 320,
         };
@@ -390,8 +390,9 @@ public sealed class MacMenuWindow : Window
         Topmost = true;
         ResizeMode = ResizeMode.NoResize;
         SizeToContent = SizeToContent.WidthAndHeight;
-        ShowActivated = parent == null;
-        Focusable = true;
+        // The menu never takes the activation: the app the person was in keeps the foreground and
+        // the focus, so Windows' foreground lock has nothing to refuse and paste needs no switch back.
+        ShowActivated = false;
 
         View = new MacMenuView(items, isSubmenu: parent != null, minWidth: minWidth);
         Content = BuildHost(View);
@@ -408,18 +409,11 @@ public sealed class MacMenuWindow : Window
         {
             var hwnd = new WindowInteropHelper(this).Handle;
             int ex = Native.GetWindowLongW(hwnd, -20);
-            ex |= 0x80; // WS_EX_TOOLWINDOW
-            if (_parent != null) ex |= 0x08000000; // WS_EX_NOACTIVATE
+            ex |= 0x80 | 0x08000000; // WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
             Native.SetWindowLongW(hwnd, -20, ex);
         };
         if (parent == null)
-        {
-            Deactivated += (_, _) => OnDeactivated();
-            Activated += (_, _) => Trace?.Invoke($"activated after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms");
             Closed += (_, _) => Trace?.Invoke($"closed after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms");
-            PreviewKeyDown += OnKeyDown;
-            TextInput += OnTextInput;
-        }
         MouseMove += (_, e) => _lastMouse = e.GetPosition(this);
     }
 
@@ -463,18 +457,10 @@ public sealed class MacMenuWindow : Window
         Top = y - ShadowPad;
         if (_parent == null)
         {
-            // Take the foreground before the window appears, so a refused activation
-            // cannot make the menu flash and close.
-            var hwnd = new WindowInteropHelper(this).EnsureHandle();
             _shownAt = DateTime.UtcNow;
-            Trace?.Invoke($"show menu, foreground before {Native.Describe(Native.GetForegroundWindow())}");
+            Trace?.Invoke($"show menu over {Native.Describe(Native.GetForegroundWindow())}");
             Show();
-            Trace?.Invoke($"after Show active={IsActive} fg={Native.Describe(Native.GetForegroundWindow())}");
-            var ok = Native.ForceForeground(hwnd);
-            Trace?.Invoke($"ForceForeground={ok}");
-            Activate();
-            Focus();
-            StartOutsideWatch();
+            StartInputHooks();
         }
         else Show();
         if (highlightFirst) SelectFirst();
@@ -570,19 +556,17 @@ public sealed class MacMenuWindow : Window
     }
 
     DateTime _shownAt;
-    int _reclaims;
-    System.Windows.Threading.DispatcherTimer? _foregroundRetry;
-    IntPtr _mouseHook;
-    Native.HookProc? _mouseHookProc; // kept alive while the hook is installed
-    bool _clickedOutside;
-    /// <summary>Debug tests: why the menu closed.</summary>
+    IntPtr _mouseHook, _keyHook;
+    Native.HookProc? _mouseHookProc, _keyHookProc; // kept alive while the hooks are installed
+    readonly HashSet<uint> _swallowedKeys = new();
+    /// <summary>Debug tests and KAURI_TRACE: why the menu opened and closed.</summary>
     public static Action<string>? Trace;
 
     /// <summary>
-    /// Closes the menu on any mouse press outside its windows, as a system menu does, whether or
-    /// not it holds the activation. Also keeps asking for the foreground shortly after the hot key.
+    /// The menu has no activation, so it watches input the way a system menu does: a mouse press
+    /// outside its windows closes it, and keys go to the menu instead of the app in front.
     /// </summary>
-    void StartOutsideWatch()
+    void StartInputHooks()
     {
         _mouseHookProc = (code, wParam, lParam) =>
         {
@@ -592,31 +576,55 @@ public sealed class MacMenuWindow : Window
                 var pt = System.Runtime.InteropServices.Marshal.PtrToStructure<Native.POINT>(lParam);
                 if (!ContainsScreenPoint(pt))
                 {
-                    if (Trace != null && Native.GetWindowRect(new WindowInteropHelper(this).Handle, out var tr))
-                        Trace($"click outside at {pt.X},{pt.Y}, menu window {tr.Left},{tr.Top}-{tr.Right},{tr.Bottom}");
-                    _clickedOutside = true;
+                    Trace?.Invoke($"click outside at {pt.X},{pt.Y}");
                     Dispatcher.BeginInvoke(CloseAll);
                 }
             }
             return Native.CallNextHookEx(_mouseHook, code, wParam, lParam);
         };
-        _mouseHook = Native.SetWindowsHookExW(Native.WH_MOUSE_LL, _mouseHookProc, Native.GetModuleHandleW(null), 0);
-
-        _foregroundRetry = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
-        _foregroundRetry.Tick += (_, _) =>
+        _keyHookProc = (code, wParam, lParam) =>
         {
-            if (_closing || (DateTime.UtcNow - _shownAt).TotalMilliseconds > 1500) { _foregroundRetry.Stop(); return; }
-            if (IsActive || _clickedOutside) return;
-            Native.ForceForeground(new WindowInteropHelper(this).Handle);
-            Activate();
+            if (code >= 0 && OnHookKey((int)wParam, System.Runtime.InteropServices.Marshal.PtrToStructure<Native.KBDLLHOOKSTRUCT>(lParam)))
+                return (IntPtr)1;
+            return Native.CallNextHookEx(_keyHook, code, wParam, lParam);
         };
-        _foregroundRetry.Start();
+        var module = Native.GetModuleHandleW(null);
+        _mouseHook = Native.SetWindowsHookExW(Native.WH_MOUSE_LL, _mouseHookProc, module, 0);
+        _keyHook = Native.SetWindowsHookExW(Native.WH_KEYBOARD_LL, _keyHookProc, module, 0);
+        if (_keyHook == IntPtr.Zero) Trace?.Invoke($"keyboard hook failed, error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
         Closed += (_, _) =>
         {
-            _foregroundRetry.Stop();
             if (_mouseHook != IntPtr.Zero) Native.UnhookWindowsHookEx(_mouseHook);
-            _mouseHook = IntPtr.Zero;
+            if (_keyHook != IntPtr.Zero) Native.UnhookWindowsHookEx(_keyHook);
+            _mouseHook = _keyHook = IntPtr.Zero;
         };
+    }
+
+    /// <summary>
+    /// Runs inside the low-level hook, so it only decides and queues: true swallows the key.
+    /// Modifiers always pass, so the app in front never sees a stuck Ctrl or Shift. Keys with Alt
+    /// or Win held (Alt+Tab, Win+D) close the menu and go on to Windows.
+    /// </summary>
+    bool OnHookKey(int msg, Native.KBDLLHOOKSTRUCT k)
+    {
+        if ((k.flags & Native.LLKHF_INJECTED) != 0 || _closing || Native.IsModifierKey(k.vkCode)) return false;
+        bool down = msg is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN;
+        if (!down) return _swallowedKeys.Remove(k.vkCode);
+        if (Native.IsKeyDown(0x12) || Native.IsKeyDown(0x5B) || Native.IsKeyDown(0x5C))
+        {
+            Dispatcher.BeginInvoke(CloseAll);
+            return false;
+        }
+        _swallowedKeys.Add(k.vkCode);
+        bool ctrl = Native.IsKeyDown(0x11);
+        var text = ctrl ? null : Native.KeyText(k.vkCode, k.scanCode);
+        var key = KeyInterop.KeyFromVirtualKey((int)k.vkCode);
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing) return;
+            if (!OnKey(key, ctrl) && !string.IsNullOrEmpty(text)) OnText(text);
+        }, DispatcherPriority.Input);
+        return true;
     }
 
     /// <summary>True if the screen point (physical pixels) is inside this menu or one of its submenus.</summary>
@@ -632,31 +640,6 @@ public sealed class MacMenuWindow : Window
                 return true;
         }
         return false;
-    }
-
-    /// <summary>
-    /// Right after a hot key, Windows may hand the activation straight back to the app that had
-    /// it. Losing it then is not the user leaving the menu: take it back, a few times at most.
-    /// Later, or after a click elsewhere, deactivation closes the menu as before.
-    /// </summary>
-    void OnDeactivated()
-    {
-        if (_closing) return;
-        bool justShown = (DateTime.UtcNow - _shownAt).TotalMilliseconds < 800;
-        if (justShown && _reclaims < 3 && !_clickedOutside && !Native.IsMouseButtonDown())
-        {
-            Trace?.Invoke($"deactivated after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms, reclaim {_reclaims + 1}, foreground {Native.Describe(Native.GetForegroundWindow())}");
-            _reclaims++;
-            Dispatcher.BeginInvoke(() =>
-            {
-                if (_closing || IsActive) return;
-                Native.ForceForeground(new WindowInteropHelper(this).Handle);
-                Activate();
-            }, System.Windows.Threading.DispatcherPriority.Input);
-            return;
-        }
-        Trace?.Invoke($"deactivated after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms, closing, foreground {Native.Describe(Native.GetForegroundWindow())}");
-        CloseAll();
     }
 
     public void CloseAll()
@@ -701,11 +684,11 @@ public sealed class MacMenuWindow : Window
         }
     }
 
-    void OnKeyDown(object sender, KeyEventArgs e)
+    /// <summary>A key from the hook; false if the menu has no use for it.</summary>
+    bool OnKey(Key key, bool ctrl)
     {
         IsKeyboardDriven = true;
         var m = Deepest;
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
         switch (key)
         {
             case Key.Escape:
@@ -717,15 +700,13 @@ public sealed class MacMenuWindow : Window
                     p.View.SetSelected(idx);
                 }
                 else CloseAll();
-                e.Handled = true;
-                return;
-            case Key.Down: Move(m, 1); e.Handled = true; return;
-            case Key.Up: Move(m, -1); e.Handled = true; return;
+                return true;
+            case Key.Down: Move(m, 1); return true;
+            case Key.Up: Move(m, -1); return true;
             case Key.Right:
                 if (m.View.SelectedIndex >= 0 && m.View.Items[m.View.SelectedIndex].Submenu != null)
                     m.OpenSubmenu(m.View.SelectedIndex, true);
-                e.Handled = true;
-                return;
+                return true;
             case Key.Left:
                 if (m._parent != null)
                 {
@@ -734,8 +715,7 @@ public sealed class MacMenuWindow : Window
                     p.CloseChild();
                     p.View.SetSelected(idx);
                 }
-                e.Handled = true;
-                return;
+                return true;
             case Key.Enter:
             case Key.Space when _typeSelect.Length == 0:
                 if (m.View.SelectedIndex >= 0)
@@ -744,21 +724,20 @@ public sealed class MacMenuWindow : Window
                     if (it.Submenu != null) m.OpenSubmenu(m.View.SelectedIndex, true);
                     else m.Activate(m.View.SelectedIndex);
                 }
-                e.Handled = true;
-                return;
+                return true;
         }
         // Key equivalents: ⌘(Ctrl)+key, or the bare digit for numbered history items.
         var ch = KeyChar(key);
         if (ch != null)
         {
-            bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
             var target = FindKeyEquivalent(m, ch, ctrl);
             if (target.menu != null)
             {
                 target.menu.Activate(target.index);
-                e.Handled = true;
+                return true;
             }
         }
+        return false;
     }
 
     static (MacMenuWindow? menu, int index) FindKeyEquivalent(MacMenuWindow m, string ch, bool ctrl)
@@ -780,15 +759,15 @@ public sealed class MacMenuWindow : Window
         _ => null,
     };
 
-    void OnTextInput(object sender, TextCompositionEventArgs e)
+    /// <summary>Type-select: jump to the first item whose title starts with what was typed.</summary>
+    void OnText(string text)
     {
-        if (string.IsNullOrEmpty(e.Text) || char.IsControl(e.Text[0])) return;
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) return;
+        if (char.IsControl(text[0])) return;
         var m = Deepest;
         if ((DateTime.Now - _typeSelectTime).TotalSeconds > 1) _typeSelect = "";
         _typeSelectTime = DateTime.Now;
-        _typeSelect += e.Text;
-        if (char.IsDigit(e.Text[0]) && _typeSelect.Length == 1 && FindKeyEquivalent(m, e.Text, false).menu != null) { _typeSelect = ""; return; }
+        _typeSelect += text;
+        if (char.IsDigit(text[0]) && _typeSelect.Length == 1 && FindKeyEquivalent(m, text, false).menu != null) { _typeSelect = ""; return; }
         for (int i = 0; i < m.View.Items.Count; i++)
         {
             var it = m.View.Items[i];
@@ -799,6 +778,5 @@ public sealed class MacMenuWindow : Window
                 break;
             }
         }
-        e.Handled = true;
     }
 }

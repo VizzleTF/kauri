@@ -1,6 +1,7 @@
 # Usage: hotkey-test.ps1 -Exe dist\Kauri.exe -Target notepad|edge [-Rounds 5] [-Out result.txt]
 # Presses the menu hot key while another app is in front, as a person does, and records for how
-# long the menu stays on screen and whether it holds the foreground. Exits 1 if any round fails.
+# long the menu stays on screen, whether keys reach it, and whether a pick pastes into that app.
+# Exits 1 if any check fails.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [string] $Target = "notepad",
@@ -81,10 +82,34 @@ public static class W
         keybd_event(0x11, 0, UP, UIntPtr.Zero);
     }
 
-    public static void Escape()
+    public static void Tap(byte vk)
     {
-        keybd_event(0x1B, 0, 0, UIntPtr.Zero);
-        keybd_event(0x1B, 0, UP, UIntPtr.Zero);
+        keybd_event(vk, 0, 0, UIntPtr.Zero);
+        keybd_event(vk, 0, UP, UIntPtr.Zero);
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string title);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageW(IntPtr h, int msg, IntPtr w, StringBuilder l);
+
+    /// text of Notepad's edit control, or null if it has none we know
+    public static string EditText(IntPtr top)
+    {
+        foreach (var cls in new[] { "Edit", "RichEditD2DPT" })
+        {
+            IntPtr e = FindWindowExW(top, IntPtr.Zero, cls, null);
+            if (e == IntPtr.Zero)
+            {
+                IntPtr host = FindWindowExW(top, IntPtr.Zero, "NotepadTextBox", null);
+                if (host != IntPtr.Zero) e = FindWindowExW(host, IntPtr.Zero, cls, null);
+            }
+            if (e != IntPtr.Zero)
+            {
+                var sb = new StringBuilder(4096);
+                SendMessageW(e, 0x000D, (IntPtr)sb.Capacity, sb);
+                return sb.ToString();
+            }
+        }
+        return null;
     }
 }
 "@
@@ -130,24 +155,43 @@ foreach ($r in 1..$Rounds) {
     [W]::HotKey($release)
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $timeline = New-Object System.Collections.Generic.List[string]
-    $last = -1
+    $last = ""; $appeared = $false; $flashed = $false
     while ($sw.ElapsedMilliseconds -lt 2000) {
         $n = [W]::MenuCount([uint32]$kauri.Id)
-        $front = [W]::Pid([W]::GetForegroundWindow()) -eq $kauri.Id
-        $state = "$n/$front"
-        if ($state -ne $last) { $timeline.Add("$($sw.ElapsedMilliseconds)ms menus=$n kauriFront=$front"); $last = $state }
+        if ($n -gt 0) { $appeared = $true } elseif ($appeared) { $flashed = $true }
+        $fg = [W]::Pid([W]::GetForegroundWindow())
+        $front = if ($fg -eq $kauri.Id) { "kauri" } elseif ($fg -eq $appPid) { "target" } else { "$fg" }
+        $state = "menus=$n foreground=$front"
+        if ($state -ne $last) { $timeline.Add("$($sw.ElapsedMilliseconds)ms $state"); $last = $state }
         Start-Sleep -Milliseconds 10
     }
     $open = [W]::MenuCount([uint32]$kauri.Id) -gt 0
-    $front = [W]::Pid([W]::GetForegroundWindow()) -eq $kauri.Id
-    $ok = $open -and $front
-    if (-not $ok) { $failed++ }
-    $log.Add("round $r (modifiers released after $release ms, foreground before: $(if ($fgPid -eq $appPid) {'target'} else {$fgPid})): open=$open front=$front $(if ($ok) {'PASS'} else {'FAIL'})")
-    $timeline | ForEach-Object { $log.Add("    $_") }
-    [W]::Escape()
+    [W]::Tap(0x1B) # Escape
     Start-Sleep -Milliseconds 400
+    $closedByEscape = [W]::MenuCount([uint32]$kauri.Id) -eq 0
+    $ok = $open -and -not $flashed -and $closedByEscape
+    if (-not $ok) { $failed++ }
+    $log.Add("round $r (modifiers released after $release ms, foreground before: $(if ($fgPid -eq $appPid) {'target'} else {$fgPid})): open=$open flashed=$flashed closedByEscape=$closedByEscape $(if ($ok) {'PASS'} else {'FAIL'})")
+    $timeline | ForEach-Object { $log.Add("    $_") }
+    if (-not $closedByEscape) { [W]::Click($appWindow); Start-Sleep -Milliseconds 400 }
 }
-$log.Add("$($Rounds - $failed)/$Rounds rounds kept the menu open and in front")
+
+# A pick pastes into the app that was in front: Down to the second item, Enter.
+if ($Target -eq "notepad") {
+    [W]::Click($appWindow)
+    Start-Sleep -Milliseconds 400
+    [W]::HotKey(100)
+    Start-Sleep -Milliseconds 800
+    [W]::Tap(0x28) # Down
+    Start-Sleep -Milliseconds 150
+    [W]::Tap(0x0D) # Enter
+    Start-Sleep -Milliseconds 1000
+    $text = [W]::EditText($appWindow)
+    if ($null -eq $text) { $log.Add("paste: Notepad's text control not found, not checked") }
+    elseif ($text -like "*first clip*") { $log.Add("paste: PASS ('$text')") }
+    else { $failed++; $log.Add("paste: FAIL, Notepad holds '$text'") }
+}
+$log.Add("$failed failed check(s)")
 $log.Add("--- Kauri trace ---")
 if (Test-Path $trace) { Get-Content $trace | ForEach-Object { $log.Add($_) } }
 Stop-Process -Id $kauri.Id -Force -ErrorAction SilentlyContinue

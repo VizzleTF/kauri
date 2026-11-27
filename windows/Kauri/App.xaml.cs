@@ -75,6 +75,13 @@ public partial class App : Application
         Kauri.Sync.SyncEngine.Shared.Removed += () => Dispatcher.BeginInvoke(() =>
             MacAlert.Show("This PC was removed from sync.", "Another device removed it. Your snippets stay on this PC.", new[] { "OK" }));
         Kauri.Sync.SyncEngine.Shared.Start();
+        _tray = new TrayIcon();
+        _tray.Clicked += () => menus.PopUp(MenuType.Main, MenuManager.CursorDip(), anchorBottom: true);
+        HotKeyService.Shared.RegisterFailed += combo =>
+        {
+            MacMenuWindow.Trace?.Invoke($"hot key {combo} refused");
+            _tray.Warn($"{combo} is taken by another app", "Choose another shortcut in Settings → Shortcuts.");
+        };
         HotKeyService.Shared.Setup();
         HotKeyService.Shared.Triggered += a =>
         {
@@ -90,9 +97,6 @@ public partial class App : Application
             }
         };
         HotKeyService.Shared.FolderTriggered += id => menus.PopUpSnippetFolder(id);
-
-        _tray = new TrayIcon();
-        _tray.Clicked += () => menus.PopUp(MenuType.Main, MenuManager.CursorDip(), anchorBottom: true);
 
         LoginItem.Sync();
         if (!AppSettings.Shared.SuppressLoginItemAlert && !AppSettings.Shared.LaunchAtLogin)

@@ -179,8 +179,6 @@ internal static partial class Native
         return $"{System.IO.Path.GetFileName(path) ?? "?"}/{sb}";
     }
 
-    public static bool IsMouseButtonDown() => IsKeyDown(0x01) || IsKeyDown(0x02) || IsKeyDown(0x04);
-
     public delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -204,6 +202,37 @@ internal static partial class Native
     [DllImport("user32.dll")]
     public static extern bool SetCursorPos(int x, int y);
 
-    public const int WH_MOUSE_LL = 14;
+    public const int WH_MOUSE_LL = 14, WH_KEYBOARD_LL = 13;
+    public const int WM_KEYDOWN = 0x0100, WM_SYSKEYDOWN = 0x0104;
+    public const uint LLKHF_INJECTED = 0x10;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KBDLLHOOKSTRUCT { public uint vkCode, scanCode, flags, time; public IntPtr dwExtraInfo; }
+
+    public static bool IsModifierKey(uint vk) => vk is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C or (>= 0xA0 and <= 0xA5);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetKeyboardLayout(uint threadId);
+
+    [DllImport("user32.dll")]
+    static extern short GetKeyState(int vk);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int ToUnicodeEx(uint vk, uint scan, byte[] state, StringBuilder buf, int size, uint flags, IntPtr hkl);
+
+    /// <summary>
+    /// The text a key types in the keyboard layout of the app in front, with Shift and Caps Lock;
+    /// null for keys that type nothing. Leaves dead-key state alone.
+    /// </summary>
+    public static string? KeyText(uint vk, uint scan)
+    {
+        var state = new byte[256];
+        if (IsKeyDown(0x10)) state[0x10] = 0x80;
+        if ((GetKeyState(0x14) & 1) != 0) state[0x14] = 1;
+        var hkl = GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), out _));
+        var sb = new StringBuilder(8);
+        int n = ToUnicodeEx(vk, scan, state, sb, sb.Capacity, 0x4 /* keep keyboard state */, hkl);
+        return n > 0 ? sb.ToString(0, n) : null;
+    }
     public const int WM_LBUTTONDOWN = 0x0201, WM_RBUTTONDOWN = 0x0204, WM_MBUTTONDOWN = 0x0207, WM_XBUTTONDOWN = 0x020B;
 }

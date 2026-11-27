@@ -8,7 +8,7 @@ using Kauri.Core;
 namespace Kauri.UI;
 
 /// <summary>
-/// Debug check that a hot-key menu stays open when another process has the foreground.
+/// Debug check that a hot-key menu stays open while another process keeps the foreground.
 /// Usage: Kauri.exe --menu-focus-test --out result.txt (with KAURI_DATA_DIR set).
 /// A second Kauri.exe started with --focus-dummy plays the app the user was in.
 /// </summary>
@@ -42,7 +42,8 @@ public static class MenuFocusTest
             await Task.Delay(1500);
             var menu = Application.Current.Windows.OfType<MacMenuWindow>().FirstOrDefault(w => w.IsVisible);
             bool open = menu != null;
-            bool foreground = open && Native.GetForegroundWindow() == new WindowInteropHelper(menu!).Handle;
+            // The menu never takes the activation; the app the person was in keeps it.
+            bool foreground = open && Native.GetForegroundWindow() == dummyWindow;
             // A click inside the menu, on its top padding where there is no item, must not close it.
             bool keptOnInsideClick = false;
             if (open && Native.GetWindowRect(new WindowInteropHelper(menu!).Handle, out var mr))
@@ -68,13 +69,13 @@ public static class MenuFocusTest
                 Native.SetCursorPos(saved.X, saved.Y);
                 closedByClick = !menu!.IsVisible;
             }
-            log.Add($"round {r}: menu open={open} foreground={foreground} kept on a click inside={keptOnInsideClick} closed by a click outside={closedByClick}");
+            log.Add($"round {r}: menu open={open} target kept the foreground={foreground} kept on a click inside={keptOnInsideClick} closed by a click outside={closedByClick}");
             if (open && foreground && keptOnInsideClick && closedByClick) passed++;
             if (menu?.IsVisible == true) menu.CloseAll();
             dummy.Kill();
             await Task.Delay(300);
         }
-        log.Add($"{passed}/{rounds} rounds kept the menu open and in front, and closed it on a click outside");
+        log.Add($"{passed}/{rounds} rounds kept the menu open over the target, and closed it on a click outside");
         File.WriteAllLines(outPath, log);
         Application.Current.Shutdown(passed == rounds ? 0 : 1);
     }
