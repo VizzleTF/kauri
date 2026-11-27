@@ -119,10 +119,13 @@ internal static partial class Native
     public const uint INPUT_KEYBOARD = 1;
     public const uint KEYEVENTF_KEYUP = 0x2;
 
+    /// <summary>Marks keys Kauri sends itself, so the menu's keyboard hook lets them through.</summary>
+    public static readonly IntPtr KauriInputTag = new(0x4B415552);
+
     public static INPUT Key(ushort vk, bool up) => new()
     {
         type = INPUT_KEYBOARD,
-        U = new InputUnion { ki = new KEYBDINPUT { wVk = vk, dwFlags = up ? KEYEVENTF_KEYUP : 0 } },
+        U = new InputUnion { ki = new KEYBDINPUT { wVk = vk, dwFlags = up ? KEYEVENTF_KEYUP : 0, dwExtraInfo = KauriInputTag } },
     };
 
     public static bool IsKeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
@@ -204,12 +207,47 @@ internal static partial class Native
 
     public const int WH_MOUSE_LL = 14, WH_KEYBOARD_LL = 13;
     public const int WM_KEYDOWN = 0x0100, WM_SYSKEYDOWN = 0x0104;
-    public const uint LLKHF_INJECTED = 0x10;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct KBDLLHOOKSTRUCT { public uint vkCode, scanCode, flags, time; public IntPtr dwExtraInfo; }
 
     public static bool IsModifierKey(uint vk) => vk is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C or (>= 0xA0 and <= 0xA5);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool GetTokenInformation(IntPtr token, int cls, out int value, int size, out int returned);
+
+    /// <summary>
+    /// True if the window's process runs above this one (an elevated app). Windows does not pass
+    /// input bound for it to this process's low-level hooks.
+    /// </summary>
+    public static bool IsAboveThisProcess(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || Environment.IsPrivilegedProcess) return false;
+        GetWindowThreadProcessId(hwnd, out var pid);
+        if (pid == 0 || pid == Environment.ProcessId) return false;
+        var h = OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, pid);
+        if (h == IntPtr.Zero) return Marshal.GetLastWin32Error() == 5;
+        try
+        {
+            if (!OpenProcessToken(h, 0x8 /* TOKEN_QUERY */, out var token)) return Marshal.GetLastWin32Error() == 5;
+            try { return GetTokenInformation(token, 20 /* TokenElevation */, out int elevated, 4, out _) && elevated != 0; }
+            finally { CloseHandle(token); }
+        }
+        finally { CloseHandle(h); }
+    }
+
+    public delegate void WinEventProc(IntPtr hook, uint ev, IntPtr hwnd, int obj, int child, uint thread, uint time);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventProc proc, uint pid, uint thread, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern bool UnhookWinEvent(IntPtr hook);
+
+    public const uint EVENT_SYSTEM_FOREGROUND = 3;
 
     [DllImport("user32.dll")]
     static extern IntPtr GetKeyboardLayout(uint threadId);
@@ -221,7 +259,7 @@ internal static partial class Native
     static extern int ToUnicodeEx(uint vk, uint scan, byte[] state, StringBuilder buf, int size, uint flags, IntPtr hkl);
 
     /// <summary>
-    /// The text a key types in the keyboard layout of the app in front, with Shift and Caps Lock;
+    /// The text a key types in the keyboard layout of the app in front, with Shift, AltGr and Caps Lock;
     /// null for keys that type nothing. Leaves dead-key state alone.
     /// </summary>
     public static string? KeyText(uint vk, uint scan)
@@ -229,6 +267,7 @@ internal static partial class Native
         var state = new byte[256];
         if (IsKeyDown(0x10)) state[0x10] = 0x80;
         if ((GetKeyState(0x14) & 1) != 0) state[0x14] = 1;
+        if (IsKeyDown(0xA5)) state[0x11] = state[0x12] = 0x80; // AltGr
         var hkl = GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), out _));
         var sb = new StringBuilder(8);
         int n = ToUnicodeEx(vk, scan, state, sb, sb.Capacity, 0x4 /* keep keyboard state */, hkl);

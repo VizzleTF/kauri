@@ -59,7 +59,11 @@ public partial class App : Application
         }
 
         if (Environment.GetEnvironmentVariable("KAURI_TRACE") is { Length: > 0 } tracePath)
-            MacMenuWindow.Trace = m => System.IO.File.AppendAllText(tracePath, $"{DateTime.Now:HH:mm:ss.fff} {m}\n");
+            MacMenuWindow.Trace = m =>
+            {
+                try { System.IO.File.AppendAllText(tracePath, $"{DateTime.Now:HH:mm:ss.fff} {m}\n"); }
+                catch (System.IO.IOException) { }
+            };
         AppSettings.Load();
         Database.Open();
         Theme.Watch();
@@ -77,10 +81,11 @@ public partial class App : Application
         Kauri.Sync.SyncEngine.Shared.Start();
         _tray = new TrayIcon();
         _tray.Clicked += () => menus.PopUp(MenuType.Main, MenuManager.CursorDip(), anchorBottom: true);
-        HotKeyService.Shared.RegisterFailed += combo =>
+        HotKeyService.Shared.RefusedChanged += () =>
         {
-            MacMenuWindow.Trace?.Invoke($"hot key {combo} refused");
-            _tray.Warn($"{combo} is taken by another app", "Choose another shortcut in Settings → Shortcuts.");
+            var refused = HotKeyService.Shared.Refused;
+            if (refused.Count > 0) MacMenuWindow.Trace?.Invoke($"hot keys refused: {string.Join(", ", refused)}");
+            _tray.ShowRefused(refused);
         };
         HotKeyService.Shared.Setup();
         HotKeyService.Shared.Triggered += a =>

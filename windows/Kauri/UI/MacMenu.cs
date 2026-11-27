@@ -340,7 +340,7 @@ public sealed class MacToolTip : ToolTip
             Text = text,
             FontFamily = Theme.Font,
             FontSize = 12,
-            Foreground = ThemtextPrimary,
+            Foreground = Theme.TextPrimary,
             TextWrapping = TextWrapping.Wrap,
             MaxWidth = 320,
         };
@@ -390,8 +390,6 @@ public sealed class MacMenuWindow : Window
         Topmost = true;
         ResizeMode = ResizeMode.NoResize;
         SizeToContent = SizeToContent.WidthAndHeight;
-        // The menu never takes the activation: the app the person was in keeps the foreground and
-        // the focus, so Windows' foreground lock has nothing to refuse and paste needs no switch back.
         ShowActivated = false;
 
         View = new MacMenuView(items, isSubmenu: parent != null, minWidth: minWidth);
@@ -409,11 +407,24 @@ public sealed class MacMenuWindow : Window
         {
             var hwnd = new WindowInteropHelper(this).Handle;
             int ex = Native.GetWindowLongW(hwnd, -20);
-            ex |= 0x80 | 0x08000000; // WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+            ex |= 0x80; // WS_EX_TOOLWINDOW
+            if (!_activates) ex |= 0x08000000; // WS_EX_NOACTIVATE
             Native.SetWindowLongW(hwnd, -20, ex);
         };
         if (parent == null)
+        {
             Closed += (_, _) => Trace?.Invoke($"closed after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms");
+            // Keys arrive here only when the menu holds the activation (over an elevated app).
+            PreviewKeyDown += (_, e) =>
+            {
+                if (OnKey(e.Key == Key.System ? e.SystemKey : e.Key, Keyboard.Modifiers.HasFlag(ModifierKeys.Control))) e.Handled = true;
+            };
+            TextInput += (_, e) =>
+            {
+                if (!string.IsNullOrEmpty(e.Text) && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) OnText(e.Text);
+            };
+            Deactivated += (_, _) => { if (_activates) CloseAll(); };
+        }
         MouseMove += (_, e) => _lastMouse = e.GetPosition(this);
     }
 
@@ -457,9 +468,20 @@ public sealed class MacMenuWindow : Window
         Top = y - ShadowPad;
         if (_parent == null)
         {
+            // Normally the menu never takes the activation: the app in front keeps the foreground
+            // and focus, so Windows' foreground lock has nothing to refuse. Input bound for an
+            // elevated app never reaches this process's hooks, so over one the menu activates.
             _shownAt = DateTime.UtcNow;
-            Trace?.Invoke($"show menu over {Native.Describe(Native.GetForegroundWindow())}");
+            var front = Native.GetForegroundWindow();
+            _activates = Native.IsAboveThisProcess(front);
+            ShowActivated = _activates;
+            Trace?.Invoke($"show menu over {Native.Describe(front)}{(_activates ? ", elevated: taking the activation" : "")}");
             Show();
+            if (_activates)
+            {
+                Native.ForceForeground(new WindowInteropHelper(this).Handle);
+                Activate();
+            }
             StartInputHooks();
         }
         else Show();
@@ -556,15 +578,18 @@ public sealed class MacMenuWindow : Window
     }
 
     DateTime _shownAt;
-    IntPtr _mouseHook, _keyHook;
+    bool _activates;
+    IntPtr _mouseHook, _keyHook, _foregroundHook;
     Native.HookProc? _mouseHookProc, _keyHookProc; // kept alive while the hooks are installed
-    readonly HashSet<uint> _swallowedKeys = new();
+    Native.WinEventProc? _foregroundProc;
+    readonly HashSet<uint> _swallowedKeys = new(), _heldAtOpen = new();
+    bool _altOrWinPressed;
     /// <summary>Debug tests and KAURI_TRACE: why the menu opened and closed.</summary>
     public static Action<string>? Trace;
 
     /// <summary>
-    /// The menu has no activation, so it watches input the way a system menu does: a mouse press
-    /// outside its windows closes it, and keys go to the menu instead of the app in front.
+    /// Watches input the way a system menu does: a mouse press outside its windows or another
+    /// window taking the foreground closes it, and keys go to the menu instead of the app in front.
     /// </summary>
     void StartInputHooks()
     {
@@ -588,37 +613,64 @@ public sealed class MacMenuWindow : Window
                 return (IntPtr)1;
             return Native.CallNextHookEx(_keyHook, code, wParam, lParam);
         };
+        _foregroundProc = (_, _, hwnd, _, _, _, _) =>
+        {
+            Native.GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == Environment.ProcessId) return;
+            Trace?.Invoke($"foreground moved to {Native.Describe(hwnd)}");
+            CloseAll();
+        };
+        // a key already down (the hot key's own, auto-repeating) belongs to the app in front
+        for (uint vk = 0x08; vk <= 0xFE; vk++)
+            if (!Native.IsModifierKey(vk) && Native.IsKeyDown((int)vk)) _heldAtOpen.Add(vk);
         var module = Native.GetModuleHandleW(null);
         _mouseHook = Native.SetWindowsHookExW(Native.WH_MOUSE_LL, _mouseHookProc, module, 0);
-        _keyHook = Native.SetWindowsHookExW(Native.WH_KEYBOARD_LL, _keyHookProc, module, 0);
-        if (_keyHook == IntPtr.Zero) Trace?.Invoke($"keyboard hook failed, error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+        if (!_activates)
+        {
+            _keyHook = Native.SetWindowsHookExW(Native.WH_KEYBOARD_LL, _keyHookProc, module, 0);
+            if (_keyHook == IntPtr.Zero) Trace?.Invoke($"keyboard hook failed, error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+        }
+        _foregroundHook = Native.SetWinEventHook(Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _foregroundProc, 0, 0, 0);
         Closed += (_, _) =>
         {
             if (_mouseHook != IntPtr.Zero) Native.UnhookWindowsHookEx(_mouseHook);
             if (_keyHook != IntPtr.Zero) Native.UnhookWindowsHookEx(_keyHook);
-            _mouseHook = _keyHook = IntPtr.Zero;
+            if (_foregroundHook != IntPtr.Zero) Native.UnhookWinEvent(_foregroundHook);
+            _mouseHook = _keyHook = _foregroundHook = IntPtr.Zero;
         };
     }
 
     /// <summary>
-    /// Runs inside the low-level hook, so it only decides and queues: true swallows the key.
-    /// Modifiers always pass, so the app in front never sees a stuck Ctrl or Shift. Keys with Alt
-    /// or Win held (Alt+Tab, Win+D) close the menu and go on to Windows.
+    /// Runs inside the low-level hook, so it only decides and queues: true swallows the key. Only
+    /// keys the menu uses are swallowed; modifiers, Caps Lock, media keys and the registered
+    /// shortcuts pass. Alt or Win pressed while the menu is open (Alt+Tab, Win+D) closes it.
     /// </summary>
     bool OnHookKey(int msg, Native.KBDLLHOOKSTRUCT k)
     {
-        if ((k.flags & Native.LLKHF_INJECTED) != 0 || _closing || Native.IsModifierKey(k.vkCode)) return false;
+        if (k.dwExtraInfo == Native.KauriInputTag || _closing) return false;
         bool down = msg is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN;
-        if (!down) return _swallowedKeys.Remove(k.vkCode);
-        if (Native.IsKeyDown(0x12) || Native.IsKeyDown(0x5B) || Native.IsKeyDown(0x5C))
+        uint vk = k.vkCode;
+        if (Native.IsModifierKey(vk))
+        {
+            if (down && vk is 0xA4 or 0x5B or 0x5C) _altOrWinPressed = true; // left Alt, Win; right Alt is AltGr
+            return false;
+        }
+        if (!down)
+        {
+            _heldAtOpen.Remove(vk);
+            return _swallowedKeys.Remove(vk);
+        }
+        if (_heldAtOpen.Contains(vk) || HotKeyService.Shared.IsHotKey(vk)) return false;
+        if (_altOrWinPressed && (Native.IsKeyDown(0xA4) || Native.IsKeyDown(0x5B) || Native.IsKeyDown(0x5C)))
         {
             Dispatcher.BeginInvoke(CloseAll);
             return false;
         }
-        _swallowedKeys.Add(k.vkCode);
-        bool ctrl = Native.IsKeyDown(0x11);
-        var text = ctrl ? null : Native.KeyText(k.vkCode, k.scanCode);
-        var key = KeyInterop.KeyFromVirtualKey((int)k.vkCode);
+        bool ctrl = Native.IsKeyDown(0x11) && !Native.IsKeyDown(0xA5); // AltGr also reports Ctrl
+        var key = KeyInterop.KeyFromVirtualKey((int)vk);
+        var text = ctrl ? null : Native.KeyText(vk, k.scanCode);
+        if (!IsMenuKey(key) && string.IsNullOrEmpty(text)) return false;
+        _swallowedKeys.Add(vk);
         Dispatcher.BeginInvoke(() =>
         {
             if (_closing) return;
@@ -626,6 +678,9 @@ public sealed class MacMenuWindow : Window
         }, DispatcherPriority.Input);
         return true;
     }
+
+    static bool IsMenuKey(Key key) =>
+        key is Key.Escape or Key.Up or Key.Down or Key.Left or Key.Right or Key.Enter or Key.Space || KeyChar(key) != null;
 
     /// <summary>True if the screen point (physical pixels) is inside this menu or one of its submenus.</summary>
     bool ContainsScreenPoint(Native.POINT pt)

@@ -7,8 +7,10 @@ public sealed class HotKeyService
     public static HotKeyService Shared { get; } = new();
     public event Action<HotKeyAction>? Triggered;
     public event Action<Guid>? FolderTriggered;
-    /// <summary>Raised when Windows refuses a shortcut, usually because another app holds it.</summary>
-    public event Action<KeyCombo>? RegisterFailed;
+    /// <summary>Shortcuts Windows refused, usually because another app holds them.</summary>
+    public List<KeyCombo> Refused { get; } = new();
+    public event Action? RefusedChanged;
+    readonly List<KeyCombo> _registered = new();
     readonly Dictionary<int, Guid> _folderIds = new();
     int _nextFolderId = 100;
     bool _suspended;
@@ -48,6 +50,18 @@ public sealed class HotKeyService
             _folderIds[id] = g;
             Register(id, combo);
         }
+        RefusedChanged?.Invoke();
+    }
+
+    /// <summary>True if the key, with the modifiers held now, is one of the registered shortcuts.</summary>
+    public bool IsHotKey(uint vk)
+    {
+        var m = MacModifiers.None;
+        if (Native.IsKeyDown(0x10)) m |= MacModifiers.Shift;
+        if (Native.IsKeyDown(0x11)) m |= MacModifiers.Command;
+        if (Native.IsKeyDown(0x12)) m |= MacModifiers.Option;
+        if (Native.IsKeyDown(0x5B) || Native.IsKeyDown(0x5C)) m |= MacModifiers.Control;
+        return _registered.Exists(c => c.VirtualKey == vk && c.Modifiers == m);
     }
 
     void UnregisterAll()
@@ -56,13 +70,15 @@ public sealed class HotKeyService
         foreach (var id in _folderIds.Keys) Native.UnregisterHotKey(MessageWindow.Shared.Handle, id);
         _folderIds.Clear();
         _nextFolderId = 100;
+        _registered.Clear();
+        Refused.Clear();
     }
 
     void Register(int id, KeyCombo? combo)
     {
         if (combo == null) return;
-        if (!Native.RegisterHotKey(MessageWindow.Shared.Handle, id, combo.Win32Modifiers, (uint)combo.VirtualKey))
-            RegisterFailed?.Invoke(combo);
+        if (Native.RegisterHotKey(MessageWindow.Shared.Handle, id, combo.Win32Modifiers, (uint)combo.VirtualKey)) _registered.Add(combo);
+        else Refused.Add(combo);
     }
 
     public void Change(HotKeyAction action, KeyCombo? combo)

@@ -115,8 +115,7 @@ public static class W
 "@
 
 $log = New-Object System.Collections.Generic.List[string]
-$data = Join-Path $env:RUNNER_TEMP "kauri-hotkey-data"
-if (-not $env:RUNNER_TEMP) { $data = Join-Path $env:TEMP "kauri-hotkey-data" }
+$data = Join-Path $(if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }) "kauri-hotkey-data"
 Remove-Item -Recurse -Force $data -ErrorAction SilentlyContinue
 New-Item -ItemType Directory $data | Out-Null
 '{"SuppressLoginItemAlert": true}' | Set-Content (Join-Path $data "settings.json")
@@ -132,8 +131,8 @@ Set-Clipboard -Value "second clip"; Start-Sleep -Milliseconds 400
 switch ($Target) {
     "notepad" { $app = Start-Process notepad -PassThru }
     "edge" {
-        $profile = Join-Path $data "edge"
-        $app = Start-Process "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" -ArgumentList "--no-first-run","--no-default-browser-check","--user-data-dir=$profile","--new-window","about:blank" -PassThru
+        $edgeProfile = Join-Path $data "edge"
+        $app = Start-Process "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" -ArgumentList "--no-first-run","--no-default-browser-check","--user-data-dir=$edgeProfile","--new-window","about:blank" -PassThru
     }
 }
 Start-Sleep -Seconds 4
@@ -187,7 +186,7 @@ if ($Target -eq "notepad") {
     [W]::Tap(0x0D) # Enter
     Start-Sleep -Milliseconds 1000
     $text = [W]::EditText($appWindow)
-    if ($null -eq $text) { $log.Add("paste: Notepad's text control not found, not checked") }
+    if ($null -eq $text) { $failed++; $log.Add("paste: FAIL, Notepad's text control not found") }
     elseif ($text -like "*first clip*") { $log.Add("paste: PASS ('$text')") }
     else { $failed++; $log.Add("paste: FAIL, Notepad holds '$text'") }
 }
