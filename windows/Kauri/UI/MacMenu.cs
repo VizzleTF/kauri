@@ -718,6 +718,7 @@ public sealed class MacMenuWindow : Window
             return;
         }
         var action = item.Action;
+        Trace?.Invoke($"picked \"{item.PlainTitle}\", foreground {Native.Describe(Native.GetForegroundWindow())}");
         CloseAll();
         if (action != null) Application.Current.Dispatcher.BeginInvoke(action, DispatcherPriority.Input);
     }
