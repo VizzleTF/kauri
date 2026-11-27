@@ -166,6 +166,19 @@ internal static partial class Native
         return GetForegroundWindow() == hwnd;
     }
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetClassNameW(IntPtr hWnd, StringBuilder name, int max);
+
+    /// <summary>Process and class of a window, for traces.</summary>
+    public static string Describe(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return "none";
+        var sb = new StringBuilder(256);
+        GetClassNameW(hwnd, sb, sb.Capacity);
+        var path = ProcessPathForWindow(hwnd);
+        return $"{System.IO.Path.GetFileName(path) ?? "?"}/{sb}";
+    }
+
     public static bool IsMouseButtonDown() => IsKeyDown(0x01) || IsKeyDown(0x02) || IsKeyDown(0x04);
 
     public delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);

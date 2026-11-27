@@ -58,6 +58,8 @@ public partial class App : Application
             return;
         }
 
+        if (Environment.GetEnvironmentVariable("KAURI_TRACE") is { Length: > 0 } tracePath)
+            MacMenuWindow.Trace = m => System.IO.File.AppendAllText(tracePath, $"{DateTime.Now:HH:mm:ss.fff} {m}\n");
         AppSettings.Load();
         Database.Open();
         Theme.Watch();
@@ -76,6 +78,7 @@ public partial class App : Application
         HotKeyService.Shared.Setup();
         HotKeyService.Shared.Triggered += a =>
         {
+            MacMenuWindow.Trace?.Invoke($"hot key {a}");
             switch (a)
             {
                 case HotKeyAction.Main: menus.PopUp(MenuType.Main); break;

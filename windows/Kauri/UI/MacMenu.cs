@@ -415,6 +415,8 @@ public sealed class MacMenuWindow : Window
         if (parent == null)
         {
             Deactivated += (_, _) => OnDeactivated();
+            Activated += (_, _) => Trace?.Invoke($"activated after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms");
+            Closed += (_, _) => Trace?.Invoke($"closed after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms");
             PreviewKeyDown += OnKeyDown;
             TextInput += OnTextInput;
         }
@@ -465,8 +467,11 @@ public sealed class MacMenuWindow : Window
             // cannot make the menu flash and close.
             var hwnd = new WindowInteropHelper(this).EnsureHandle();
             _shownAt = DateTime.UtcNow;
+            Trace?.Invoke($"show menu, foreground before {Native.Describe(Native.GetForegroundWindow())}");
             Show();
-            Native.ForceForeground(hwnd);
+            Trace?.Invoke($"after Show active={IsActive} fg={Native.Describe(Native.GetForegroundWindow())}");
+            var ok = Native.ForceForeground(hwnd);
+            Trace?.Invoke($"ForceForeground={ok}");
             Activate();
             Focus();
             StartOutsideWatch();
@@ -640,6 +645,7 @@ public sealed class MacMenuWindow : Window
         bool justShown = (DateTime.UtcNow - _shownAt).TotalMilliseconds < 800;
         if (justShown && _reclaims < 3 && !_clickedOutside && !Native.IsMouseButtonDown())
         {
+            Trace?.Invoke($"deactivated after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms, reclaim {_reclaims + 1}, foreground {Native.Describe(Native.GetForegroundWindow())}");
             _reclaims++;
             Dispatcher.BeginInvoke(() =>
             {
@@ -649,7 +655,7 @@ public sealed class MacMenuWindow : Window
             }, System.Windows.Threading.DispatcherPriority.Input);
             return;
         }
-        Trace?.Invoke($"deactivated after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms, foreground {Native.GetForegroundWindow()}");
+        Trace?.Invoke($"deactivated after {(DateTime.UtcNow - _shownAt).TotalMilliseconds:F0} ms, closing, foreground {Native.Describe(Native.GetForegroundWindow())}");
         CloseAll();
     }
 
