@@ -186,12 +186,15 @@ foreach ($r in 1..$Rounds) {
     if (-not $closedByEscape) { [W]::Click($appWindow); Start-Sleep -Milliseconds 400 }
 }
 
-# A pick pastes into the app that was in front: Down to the second item, Enter.
+# A pick pastes into the app that was in front. History sits in a "1 - 2" submenu by default:
+# Right opens it on the newest clip, Down moves to the older one, Enter pastes it.
 if ($Target -eq "notepad") {
     [W]::Click($appWindow)
     Start-Sleep -Milliseconds 400
     [W]::HotKey(100)
     Start-Sleep -Milliseconds 800
+    [W]::Tap(0x27) # Right
+    Start-Sleep -Milliseconds 150
     [W]::Tap(0x28) # Down
     Start-Sleep -Milliseconds 150
     [W]::Tap(0x0D) # Enter
