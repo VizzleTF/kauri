@@ -148,8 +148,11 @@ Add-Type -AssemblyName System.Windows.Forms
 [W]::Click($appWindow)
 Start-Sleep -Milliseconds 400
 foreach ($clip in "first clip", "second clip") {
-    [System.Windows.Forms.SendKeys]::SendWait("$clip^a^c{DEL}")
-    Start-Sleep -Milliseconds 600
+    foreach ($keys in $clip, "^a", "^c", "{DELETE}") {
+        [System.Windows.Forms.SendKeys]::SendWait($keys)
+        Start-Sleep -Milliseconds 150
+    }
+    Start-Sleep -Milliseconds 400
 }
 
 $failed = 0
