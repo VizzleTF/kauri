@@ -125,8 +125,6 @@ $env:KAURI_TRACE = $trace
 
 $kauri = Start-Process -FilePath $Exe -PassThru
 Start-Sleep -Seconds 3
-Set-Clipboard -Value "first clip"; Start-Sleep -Milliseconds 400
-Set-Clipboard -Value "second clip"; Start-Sleep -Milliseconds 400
 
 switch ($Target) {
     "notepad" { $app = Start-Process notepad -PassThru }
@@ -144,6 +142,15 @@ foreach ($p in @($app.Id) + @(Get-Process -Name ($app.ProcessName) -ErrorAction 
 if ($appWindow -eq [IntPtr]::Zero) { throw "no window for $Target" }
 $appPid = [W]::Pid($appWindow)
 $log.Add("target $Target pid $appPid")
+
+# Copy two clips the way a person does, so Kauri records them.
+Add-Type -AssemblyName System.Windows.Forms
+[W]::Click($appWindow)
+Start-Sleep -Milliseconds 400
+foreach ($clip in "first clip", "second clip") {
+    [System.Windows.Forms.SendKeys]::SendWait("$clip^a^c{DEL}")
+    Start-Sleep -Milliseconds 600
+}
 
 $failed = 0
 foreach ($r in 1..$Rounds) {
