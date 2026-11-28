@@ -306,10 +306,13 @@ final class KauriSync: ObservableObject {
     /// Removes another device and moves the chain to a new sync code (§9).
     func removeDevice(id: String) async throws {
         guard let old = client(), let device, let url = URL(string: state.server) else { return }
-        try await old.removeDevice(id: id)
         // only keys that a holder of the sync code signed get the next secret; the server cannot add its own
-        let remaining = try await old.devices().filter { $0.removed == nil && $0.id != Kauri.b64(device.id) && $0.id != id }
-            .compactMap { $0.verified(by: old.chain) }
+        let others = try await old.devices().filter { $0.removed == nil && $0.id != Kauri.b64(device.id) && $0.id != id }
+        let remaining = others.compactMap { $0.verified(by: old.chain) }
+        if remaining.count < others.count {
+            throw KauriAPIError(status: 0, message: String(localized: "Some of your other devices run an older Kauri Clip. Update and open Kauri Clip on them, then remove the device again."))
+        }
+        try await old.removeDevice(id: id)
 
         let next = KauriChain.new()
         let nextClient = KauriSyncClient(server: url, chain: next, device: device)
@@ -505,7 +508,12 @@ final class KauriSync: ObservableObject {
                 forget(removed: true)
                 return
             } catch let error as KauriAPIError where error.status == 410 && error.message == "forwarded" {
-                try? await followForward()
+                do {
+                    try await followForward()
+                } catch {
+                    status = .offline(error.localizedDescription)
+                    scheduleRetry()
+                }
                 return
             } catch {
                 status = .offline(error.localizedDescription)

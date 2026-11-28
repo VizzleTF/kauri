@@ -12,6 +12,8 @@ public sealed class PasteService
 
     // a click on the tray icon puts the taskbar in front; these never receive a paste
     static readonly HashSet<string> ShellClasses = ["Shell_TrayWnd", "Shell_SecondaryTrayWnd", "NotifyIconOverflowWindow", "TopLevelWindowForOverflowXamlIsland"];
+    // Start, Search, Alt+Tab and the flyouts take the foreground for a moment; they are not where the user works
+    static readonly HashSet<string> TransientClasses = ["Windows.UI.Core.CoreWindow", "XamlExplorerHostIslandWindow", "ForegroundStaging", "MultitaskingViewFrame"];
     Native.WinEventProc? _foregroundProc;
     IntPtr _lastApp;
 
@@ -32,7 +34,10 @@ public sealed class PasteService
     {
         if (hwnd == IntPtr.Zero) return false;
         Native.GetWindowThreadProcessId(hwnd, out var pid);
-        return pid != Environment.ProcessId && !ShellClasses.Contains(Native.ClassName(hwnd));
+        var cls = Native.ClassName(hwnd);
+        const int GWL_EXSTYLE = -20, WS_EX_TOOLWINDOW = 0x80;
+        return pid != Environment.ProcessId && !ShellClasses.Contains(cls) && !TransientClasses.Contains(cls)
+            && (Native.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) == 0;
     }
 
     // Modifier picker values in Clipy: 0 Command(⌘=Ctrl), 1 Shift, 2 Control(⌃=Win), 3 Option(⌥=Alt)

@@ -262,11 +262,13 @@ public sealed class SyncEngine
     public async Task RemoveDevice(string id)
     {
         if (Client() is not SyncClient old || _device == null) return;
-        await old.RemoveDevice(id);
         var me = KauriCrypto.B64(_device.Id);
         // only keys that a holder of the sync code signed get the next secret; the server cannot add its own
-        var remaining = (await old.Devices()).Where(d => d.Removed == null && d.Id != me && d.Id != id)
-            .Select(d => d.Verified(old.Chain)).OfType<KauriRecipient>().ToList();
+        var others = (await old.Devices()).Where(d => d.Removed == null && d.Id != me && d.Id != id).ToList();
+        var remaining = others.Select(d => d.Verified(old.Chain)).OfType<KauriRecipient>().ToList();
+        if (remaining.Count < others.Count)
+            throw new SyncCryptoException($"{others.Count - remaining.Count} of your other devices run an older Kauri Clip. Update and open Kauri Clip on them, then remove the device again.");
+        await old.RemoveDevice(id);
 
         var next = KauriChain.New();
         var nextClient = new SyncClient(old.Server, next, _device);
@@ -445,7 +447,11 @@ public sealed class SyncEngine
                     _retry.Stop();
                 }
                 catch (SyncApiException e) when (e.Status == 403) { Forget(removed: true); return; }
-                catch (SyncApiException e) when (e.Status == 410 && e.Error == "forwarded") { await FollowForward(); return; }
+                catch (SyncApiException e) when (e.Status == 410 && e.Error == "forwarded")
+                {
+                    try { await FollowForward(); } catch (Exception f) { SetStatus(SyncStatus.Offline, f.Message); ScheduleRetry(); }
+                    return;
+                }
                 catch (Exception e) { SetStatus(SyncStatus.Offline, e.Message); ScheduleRetry(); }
                 State.Save();
             } while (_again && ++rounds < 5);

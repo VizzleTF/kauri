@@ -222,7 +222,7 @@ Kauri-Signature: base64url(Ed25519(device key,
                    || 0x00 || Kauri-Time || 0x00 || nonce || chain_id || SHA-256(body)))
 ```
 
-The nonce keeps two identical requests sent in the same second from getting the same signature. Ed25519 is deterministic, so without it the second request would look like a replay. `chain_id` is the raw 32 bytes of `Kauri-Chain`, so a request cannot be replayed against another chain the device belongs to, such as the old and new chain of a move. A server answers `400` to any other `Kauri-Protocol`.
+The nonce keeps two identical requests sent in the same second from getting the same signature. Ed25519 is deterministic, so without it the second request would look like a replay. `chain_id` is the raw 32 bytes of `Kauri-Chain`, so a request cannot be replayed against another chain the device belongs to, such as the old and new chain of a move. A server answers `400` to any other `Kauri-Protocol`. The signature does not name the server, so a chain MUST live on one server only.
 
 The server answers `401` in three cases:
 
@@ -354,4 +354,4 @@ A device that leaves on its own (Turn Off Sync) removes itself with `DELETE /v1/
 
 ## 11. Versioning
 
-Clients send `Kauri-Protocol: 2`. A change to the record format, the key schedule or the signatures raises the protocol version. A server MAY serve several versions at the same time.
+Clients send `Kauri-Protocol: 2`. A change to the record format, the key schedule or the signatures raises the protocol version. A server serves only the versions it lists; kauri-sync serves version 2 only.

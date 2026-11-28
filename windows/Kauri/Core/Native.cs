@@ -179,9 +179,6 @@ internal static partial class Native
         return sb.ToString();
     }
 
-    [DllImport("user32.dll")]
-    public static extern bool IsWindow(IntPtr hwnd);
-
     /// <summary>Process and class of a window, for traces.</summary>
     public static string Describe(IntPtr hwnd)
     {
