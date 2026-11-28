@@ -64,6 +64,8 @@ final class KauriSync: ObservableObject {
     private var running = false
     private var again = false
     private var pullAgain = false
+    private var retrySeconds: UInt64 = 0
+    private var retry: Task<Void, Never>?
 
     static let historyCap = 500
     private static let kinds = ["folder", "snippet", "clip"]
@@ -286,8 +288,13 @@ final class KauriSync: ObservableObject {
 
     func refreshDevices() async {
         guard let client = client(), let chain, let device else { return }
-        guard let list = try? await client.devices() else { return }
+        guard var list = try? await client.devices() else { return }
         let me = Kauri.b64(device.id)
+        // devices added before protocol v2 carry no chain_sig over their keys: sign our own again
+        if let mine = list.first(where: { $0.id == me }), mine.verified(by: chain) == nil {
+            try? await client.joinWithSyncCode(deviceName: state.deviceName)
+            list = (try? await client.devices()) ?? list
+        }
         devices = list.filter { $0.removed == nil }.map { d in
             let id = Kauri.unb64(d.id) ?? Data()
             let name = Kauri.unb64(d.name).flatMap { chain.openName(deviceID: id, sealed: $0) } ?? "?"
@@ -299,8 +306,13 @@ final class KauriSync: ObservableObject {
     /// Removes another device and moves the chain to a new sync code (§9).
     func removeDevice(id: String) async throws {
         guard let old = client(), let device, let url = URL(string: state.server) else { return }
+        // only keys that a holder of the sync code signed get the next secret; the server cannot add its own
+        let others = try await old.devices().filter { $0.removed == nil && $0.id != Kauri.b64(device.id) && $0.id != id }
+        let remaining = others.compactMap { $0.verified(by: old.chain) }
+        if remaining.count < others.count {
+            throw KauriAPIError(status: 0, message: String(localized: "Some of your other devices run an older Kauri Clip. Update and open Kauri Clip on them, then remove the device again."))
+        }
         try await old.removeDevice(id: id)
-        let remaining = try await old.devices().filter { $0.removed == nil && $0.id != Kauri.b64(device.id) && $0.id != id }
 
         let next = KauriChain.new()
         let nextClient = KauriSyncClient(server: url, chain: next, device: device)
@@ -314,10 +326,9 @@ final class KauriSync: ObservableObject {
         epoch = 1
         try await push(nextClient)
 
-        let envelopes = try remaining.map { d -> (Data, Data) in
-            guard let sign = Kauri.unb64(d.sign), let x = Kauri.unb64(d.x25519) else { throw KauriCryptoError.badLength }
-            let r = KauriRecipient(id: Kauri.sha256(sign).prefix(16), x25519: x, mlkem: Kauri.unb64(d.mlkem ?? "") ?? Data())
-            return (r.id, try KauriEnvelope.seal(chainID: old.chain.id, epoch: 0, to: r, payload: next.secret))
+        let payload = old.chain.forwardPayload(next: next.secret)
+        let envelopes = try remaining.map { recipient in
+            (recipient.id, try KauriEnvelope.seal(chainID: old.chain.id, epoch: 0, to: recipient, payload: payload))
         }
         if !envelopes.isEmpty {
             try await old.forward(envelopes: envelopes.map { (deviceID: $0.0, envelope: $0.1) })
@@ -493,18 +504,38 @@ final class KauriSync: ObservableObject {
                 scan()
                 try await push(client)
                 status = .synced
+                retrySeconds = 0
+                retry?.cancel()
             } catch let error as KauriAPIError where error.status == 403 {
                 forget(removed: true)
                 return
             } catch let error as KauriAPIError where error.status == 410 && error.message == "forwarded" {
-                try? await followForward()
+                do {
+                    try await followForward()
+                } catch {
+                    status = .offline(error.localizedDescription)
+                    scheduleRetry()
+                }
                 return
             } catch {
                 status = .offline(error.localizedDescription)
+                scheduleRetry()
             }
             state.save()
             rounds += 1
         } while again && rounds < 5
+    }
+
+    /// A failed sync tries again after 5 s, doubling up to 5 minutes.
+    private func scheduleRetry() {
+        retrySeconds = min(max(retrySeconds * 2, 5), 300)
+        let delay = retrySeconds
+        retry?.cancel()
+        retry = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.sync(pull: true)
+        }
     }
 
     private func pull(_ client: KauriSyncClient) async throws {
@@ -518,6 +549,10 @@ final class KauriSync: ObservableObject {
             } catch let error as KauriAPIError where error.status == 410 && error.message == "resync" {
                 state.since = 0
                 return try await pull(client)
+            }
+            // a record of an epoch we cannot open must not be skipped: fetch its key or fail before the cursor moves
+            for missing in Set(page.records.map(\.epoch)) where dataKeys[missing] == nil {
+                dataKeys[missing] = try await client.dataKey(epoch: missing).1
             }
             records += page.records
             cursor = page.more ? page.records.last?.version ?? page.version : max(cursor, page.version)

@@ -172,6 +172,13 @@ internal static partial class Native
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern int GetClassNameW(IntPtr hWnd, StringBuilder name, int max);
 
+    public static string ClassName(IntPtr hwnd)
+    {
+        var sb = new StringBuilder(256);
+        GetClassNameW(hwnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+
     /// <summary>Process and class of a window, for traces.</summary>
     public static string Describe(IntPtr hwnd)
     {

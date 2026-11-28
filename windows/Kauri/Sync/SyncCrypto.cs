@@ -243,8 +243,25 @@ public sealed class KauriChain
     public string Words => Bip39.Mnemonic(Secret);
     public byte[] IdHash => KauriCrypto.Sha256(Id);
 
-    public static byte[] AddMessage(byte[] chainId, byte[] device) => KauriCrypto.Cat(KauriCrypto.Utf8("kauri-sync/v1/add\0"), chainId, device);
-    public byte[] AddSignature(byte[] device) => AuthKey.Sign(AddMessage(Id, device));
+    public static byte[] AddMessage(byte[] chainId, byte[] sign, byte[] x25519, byte[] mlkem) =>
+        KauriCrypto.Cat(KauriCrypto.Utf8("kauri-sync/v2/add\0"), chainId, sign, x25519, mlkem);
+    public byte[] AddSignature(byte[] sign, byte[] x25519, byte[] mlkem) => AuthKey.Sign(AddMessage(Id, sign, x25519, mlkem));
+    public bool Signed(byte[] sign, byte[] x25519, byte[] mlkem, byte[] sig) =>
+        SigningKey.Verify(AuthKey.PublicKey, AddMessage(Id, sign, x25519, mlkem), sig);
+
+    /// <summary>What a chain move seals to each remaining device (§9): the next secret and a tag only members can make.</summary>
+    public byte[] ForwardPayload(byte[] next) => KauriCrypto.Cat(next, ForwardTag(next));
+
+    public byte[] OpenForward(byte[] payload)
+    {
+        if (payload.Length != 64) throw new SyncCryptoException("bad forward");
+        var next = payload[..32];
+        if (!CryptographicOperations.FixedTimeEquals(payload[32..], ForwardTag(next)))
+            throw new SyncCryptoException("the forward was not made by a device of the chain");
+        return next;
+    }
+
+    byte[] ForwardTag(byte[] next) => KauriCrypto.Hmac(WrapKey, KauriCrypto.Cat(KauriCrypto.Utf8("kauri-sync/v2/forward\0"), Id, next));
 
     public byte[] RecordId(string kind, string local) => KauriCrypto.Hmac(IdKey, KauriCrypto.Utf8($"{kind}:{local.ToLowerInvariant()}"))[..16];
     public byte[] BlobId(byte[] content) => KauriCrypto.Hmac(IdKey, KauriCrypto.Cat(KauriCrypto.Utf8("blob:"), KauriCrypto.Sha256(content)))[..16];
@@ -309,8 +326,8 @@ public sealed class KauriDevice
 
     public KauriRecipient Recipient => new(Id, X25519.PublicKey(X25519Private), MLKemPublic);
 
-    public byte[] SignRequest(string method, string path, long time, byte[] nonce, byte[] body) =>
-        Sign.Sign(KauriRequest.Message(method, path, time, nonce, body));
+    public byte[] SignRequest(string method, string path, long time, byte[] nonce, byte[] chainId, byte[] body) =>
+        Sign.Sign(KauriRequest.Message(method, path, time, nonce, chainId, body));
 
     public byte[] OpenEnvelope(byte[] chainId, uint epoch, byte[] envelope)
     {
@@ -363,8 +380,8 @@ public static class KauriEnvelope
 
 public static class KauriRequest
 {
-    public static byte[] Message(string method, string path, long time, byte[] nonce, byte[] body) =>
-        KauriCrypto.Cat(KauriCrypto.Utf8($"kauri-sync/v1/request\0{method}\0{path}\0{time}\0"), nonce, KauriCrypto.Sha256(body));
+    public static byte[] Message(string method, string path, long time, byte[] nonce, byte[] chainId, byte[] body) =>
+        KauriCrypto.Cat(KauriCrypto.Utf8($"kauri-sync/v2/request\0{method}\0{path}\0{time}\0"), nonce, chainId, KauriCrypto.Sha256(body));
 }
 
 /// <summary>Pairing (docs/sync.md §8.1): SPAKE2 (RFC 9382) over edwards25519.</summary>

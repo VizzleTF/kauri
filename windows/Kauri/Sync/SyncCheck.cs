@@ -59,17 +59,28 @@ public static class SyncCheck
             Check(device.Recipient.X25519Key.SequenceEqual(H("device", "x25519_pub")), "x25519 pub");
             var req = v.GetProperty("request");
             var msg = KauriRequest.Message(req.GetProperty("method").GetString()!, req.GetProperty("path").GetString()!,
-                req.GetProperty("time").GetInt64(), KauriCrypto.Hex(req.GetProperty("nonce").GetString()!), Encoding.UTF8.GetBytes(req.GetProperty("body").GetString()!));
+                req.GetProperty("time").GetInt64(), KauriCrypto.Hex(req.GetProperty("nonce").GetString()!), chain.Id, Encoding.UTF8.GetBytes(req.GetProperty("body").GetString()!));
+            Check(chain.Id.SequenceEqual(KauriCrypto.Hex(req.GetProperty("chain_id").GetString()!)), "request chain_id");
             Check(msg.SequenceEqual(KauriCrypto.Hex(req.GetProperty("message").GetString()!)), "request message");
             // libsodium's Ed25519 is deterministic, so the signature matches the vector exactly.
             Check(device.SignRequest(req.GetProperty("method").GetString()!, req.GetProperty("path").GetString()!, req.GetProperty("time").GetInt64(),
-                KauriCrypto.Hex(req.GetProperty("nonce").GetString()!), Encoding.UTF8.GetBytes(req.GetProperty("body").GetString()!))
+                KauriCrypto.Hex(req.GetProperty("nonce").GetString()!), chain.Id, Encoding.UTF8.GetBytes(req.GetProperty("body").GetString()!))
                 .SequenceEqual(KauriCrypto.Hex(req.GetProperty("signature").GetString()!)), "request signature");
             Check(device.OpenEnvelope(chain.Id, 1, H("envelopes", "x25519")).SequenceEqual(dk), "x25519 envelope");
+            var next = H("forward", "next_secret");
+            Check(chain.ForwardPayload(next).SequenceEqual(H("forward", "payload")), "forward payload");
+            Check(chain.OpenForward(H("forward", "payload")).SequenceEqual(next), "open forward");
+            var forged = KauriCrypto.Cat(next, new byte[32]);
+            Check(Throws(() => chain.OpenForward(forged)), "a forged forward is rejected");
             if (MLKem.IsSupported)
             {
                 Check(device.OpenEnvelope(chain.Id, 1, H("envelopes", "hybrid")).SequenceEqual(dk), "hybrid envelope");
                 Check(KauriCrypto.Sha256(device.MLKemPublic).SequenceEqual(H("device", "mlkem768_pub_sha256")), "ML-KEM public key");
+                // Ed25519 is deterministic, so chain_sig over the three public keys matches the vector
+                Check(chain.AddSignature(device.PublicKey, device.Recipient.X25519Key, device.MLKemPublic).SequenceEqual(H("device", "chain_sig")), "chain_sig");
+                Check(chain.Signed(device.PublicKey, device.Recipient.X25519Key, device.MLKemPublic, H("device", "chain_sig")), "verify chain_sig");
+                Check(!chain.Signed(device.PublicKey, new byte[32], device.MLKemPublic, H("device", "chain_sig")), "a swapped key fails chain_sig");
+                Check(chain.OpenForward(device.OpenEnvelope(chain.Id, 0, H("forward", "envelope"))).SequenceEqual(next), "forward envelope");
                 var env = KauriEnvelope.Seal(chain.Id, 7, device.Recipient, dk);
                 Check(device.OpenEnvelope(chain.Id, 7, env).SequenceEqual(dk), "envelope round trip");
                 Check(Throws(() => device.OpenEnvelope(chain.Id, 8, env)), "envelope of another epoch");

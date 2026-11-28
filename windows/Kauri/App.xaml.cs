@@ -80,6 +80,7 @@ public partial class App : Application
             MacAlert.Show("This PC was removed from sync.", "Another device removed it. Your snippets stay on this PC.", new[] { "OK" }));
         Kauri.Sync.SyncEngine.Shared.Start();
         _tray = new TrayIcon();
+        PasteService.Shared.TrackForeground();
         _tray.Clicked += () => menus.PopUp(MenuType.Main, MenuManager.CursorDip(), anchorBottom: true);
         HotKeyService.Shared.RefusedChanged += () =>
         {

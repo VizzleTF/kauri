@@ -41,13 +41,24 @@ public sealed class SyncEngine
     uint _epoch;
     CancellationTokenSource? _loop;
     readonly HashSet<string> _deletedHistory = new();
-    readonly DispatcherTimer _debounce;
+    readonly DispatcherTimer _debounce, _retry;
+    int _retrySeconds;
     bool _running, _again, _pullAgain, _hooked;
 
     SyncEngine()
     {
         _debounce = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _debounce.Tick += async (_, _) => { _debounce.Stop(); await Sync(pull: false); };
+        _retry = new DispatcherTimer();
+        _retry.Tick += async (_, _) => { _retry.Stop(); await Sync(pull: true); };
+    }
+
+    /// <summary>A failed sync tries again after 5 s, doubling up to 5 minutes.</summary>
+    void ScheduleRetry()
+    {
+        _retrySeconds = Math.Clamp(_retrySeconds * 2, 5, 300);
+        _retry.Interval = TimeSpan.FromSeconds(_retrySeconds);
+        _retry.Start();
     }
 
     public bool IsOn => State.Enabled && _secrets != null;
@@ -235,6 +246,9 @@ public sealed class SyncEngine
         List<DeviceEntry> list;
         try { list = await c.Devices(); } catch (Exception) { return; }
         var me = KauriCrypto.B64(_device.Id);
+        // devices added before protocol v2 carry no chain_sig over their keys: sign our own again
+        if (list.FirstOrDefault(d => d.Id == me) is DeviceEntry self && self.Verified(_chain) == null)
+            try { await c.JoinWithSyncCode(State.DeviceName); list = await c.Devices(); } catch (Exception) { }
         Devices = list.Where(d => d.Removed == null).Select(d =>
             {
                 var name = KauriCrypto.UnB64(d.Name) is byte[] n && KauriCrypto.UnB64(d.Id) is byte[] id ? _chain.OpenName(id, n) : null;
@@ -248,9 +262,13 @@ public sealed class SyncEngine
     public async Task RemoveDevice(string id)
     {
         if (Client() is not SyncClient old || _device == null) return;
-        await old.RemoveDevice(id);
         var me = KauriCrypto.B64(_device.Id);
-        var remaining = (await old.Devices()).Where(d => d.Removed == null && d.Id != me && d.Id != id).ToList();
+        // only keys that a holder of the sync code signed get the next secret; the server cannot add its own
+        var others = (await old.Devices()).Where(d => d.Removed == null && d.Id != me && d.Id != id).ToList();
+        var remaining = others.Select(d => d.Verified(old.Chain)).OfType<KauriRecipient>().ToList();
+        if (remaining.Count < others.Count)
+            throw new SyncCryptoException($"{others.Count - remaining.Count} of your other devices run an older Kauri Clip. Update and open Kauri Clip on them, then remove the device again.");
+        await old.RemoveDevice(id);
 
         var next = KauriChain.New();
         var nextClient = new SyncClient(old.Server, next, _device);
@@ -264,12 +282,8 @@ public sealed class SyncEngine
         _epoch = 1;
         await Push(nextClient);
 
-        var envelopes = remaining.Select(d =>
-        {
-            var sign = KauriCrypto.UnB64(d.Sign) ?? throw new SyncCryptoException("bad device");
-            var r = new KauriRecipient(KauriCrypto.Sha256(sign)[..16], KauriCrypto.UnB64(d.X25519) ?? [], KauriCrypto.UnB64(d.MLKem) ?? []);
-            return (r.Id, KauriEnvelope.Seal(old.Chain.Id, 0, r, next.Secret));
-        }).ToList();
+        var payload = old.Chain.ForwardPayload(next.Secret);
+        var envelopes = remaining.Select(r => (r.Id, KauriEnvelope.Seal(old.Chain.Id, 0, r, payload))).ToList();
         if (envelopes.Count > 0) await old.Forward(envelopes);
         Start();
         NewSyncCode?.Invoke(next.Words);
@@ -429,10 +443,16 @@ public sealed class SyncEngine
                     Scan();
                     await Push(client);
                     SetStatus(SyncStatus.Synced);
+                    _retrySeconds = 0;
+                    _retry.Stop();
                 }
                 catch (SyncApiException e) when (e.Status == 403) { Forget(removed: true); return; }
-                catch (SyncApiException e) when (e.Status == 410 && e.Error == "forwarded") { await FollowForward(); return; }
-                catch (Exception e) { SetStatus(SyncStatus.Offline, e.Message); }
+                catch (SyncApiException e) when (e.Status == 410 && e.Error == "forwarded")
+                {
+                    try { await FollowForward(); } catch (Exception f) { SetStatus(SyncStatus.Offline, f.Message); ScheduleRetry(); }
+                    return;
+                }
+                catch (Exception e) { SetStatus(SyncStatus.Offline, e.Message); ScheduleRetry(); }
                 State.Save();
             } while (_again && ++rounds < 5);
         }
@@ -454,6 +474,9 @@ public sealed class SyncEngine
                 await Pull(client);
                 return;
             }
+            // a record of an epoch we cannot open must not be skipped: fetch its key or fail before the cursor moves
+            foreach (var e in page.Records.Select(r => r.Epoch).Distinct())
+                if (!_dataKeys.ContainsKey(e)) _dataKeys[e] = (await client.DataKey(e)).Key;
             records.AddRange(page.Records);
             cursor = page.More && page.Records.Count > 0 ? page.Records[^1].Version : Math.Max(cursor, page.Version);
             if (!page.More) break;

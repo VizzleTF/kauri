@@ -226,11 +226,31 @@ struct KauriChain {
     var words: String { BIP39.mnemonic(secret) }
     var idHash: Data { Kauri.sha256(id) }
 
-    static func addMessage(chainID: Data, device: Data) -> Data { Data("kauri-sync/v1/add\u{0}".utf8) + chainID + device }
-
-    func addSignature(device: Data) -> Data {
-        try! authKey.signature(for: KauriChain.addMessage(chainID: id, device: device))
+    static func addMessage(chainID: Data, sign: Data, x25519: Data, mlkem: Data) -> Data {
+        Data("kauri-sync/v2/add\u{0}".utf8) + chainID + sign + x25519 + mlkem
     }
+
+    /// chain_sig (§7.2): binds all three public keys of a device to the chain.
+    func addSignature(sign: Data, x25519: Data, mlkem: Data) -> Data {
+        try! authKey.signature(for: KauriChain.addMessage(chainID: id, sign: sign, x25519: x25519, mlkem: mlkem))
+    }
+
+    func signed(sign: Data, x25519: Data, mlkem: Data, signature: Data) -> Bool {
+        authKey.publicKey.isValidSignature(signature, for: KauriChain.addMessage(chainID: id, sign: sign, x25519: x25519, mlkem: mlkem))
+    }
+
+    /// What a chain move seals to each remaining device (§9): the next secret and a tag only members can make.
+    func forwardPayload(next: Data) -> Data { next + Kauri.hmac(wrapKey, forwardMessage(next)) }
+
+    func openForward(_ payload: Data) throws -> Data {
+        guard payload.count == 64 else { throw KauriCryptoError.badLength }
+        let next = payload.prefix(32)
+        guard HMAC<SHA256>.isValidAuthenticationCode(payload.suffix(32), authenticating: forwardMessage(next), using: SymmetricKey(data: wrapKey))
+        else { throw KauriCryptoError.decryptFailed }
+        return Data(next)
+    }
+
+    private func forwardMessage(_ next: Data) -> Data { Data("kauri-sync/v2/forward\u{0}".utf8) + id + next }
 
     func recordID(kind: String, localUUID: String) -> Data {
         Kauri.hmac(idKey, Data("\(kind):\(localUUID.lowercased())".utf8)).prefix(16)
@@ -313,8 +333,8 @@ struct KauriDevice {
         KauriRecipient(id: id, x25519: x25519.publicKey.rawRepresentation, mlkem: mlkemPublic)
     }
 
-    func signRequest(method: String, path: String, time: Int64, nonce: Data, body: Data) -> Data {
-        try! sign.signature(for: KauriRequest.message(method: method, path: path, time: time, nonce: nonce, body: body))
+    func signRequest(method: String, path: String, time: Int64, nonce: Data, chainID: Data, body: Data) -> Data {
+        try! sign.signature(for: KauriRequest.message(method: method, path: path, time: time, nonce: nonce, chainID: chainID, body: body))
     }
 
     func openEnvelope(chainID: Data, epoch: UInt32, envelope: Data) throws -> Data {
@@ -366,9 +386,10 @@ enum KauriEnvelope {
 }
 
 enum KauriRequest {
-    static func message(method: String, path: String, time: Int64, nonce: Data, body: Data) -> Data {
-        var m = Data("kauri-sync/v1/request\u{0}\(method)\u{0}\(path)\u{0}\(time)\u{0}".utf8)
+    static func message(method: String, path: String, time: Int64, nonce: Data, chainID: Data, body: Data) -> Data {
+        var m = Data("kauri-sync/v2/request\u{0}\(method)\u{0}\(path)\u{0}\(time)\u{0}".utf8)
         m.append(nonce)
+        m.append(chainID)
         m.append(Kauri.sha256(body))
         return m
     }

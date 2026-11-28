@@ -67,12 +67,19 @@ struct SyncVectorTests {
         #expect(device.id == v.hex("device", "device_id"))
         #expect(device.recipient.x25519 == v.hex("device", "x25519_pub"))
         // CryptoKit's Ed25519 signatures are randomized, so check by verification.
-        let sig = chain.addSignature(device: device.publicKey)
-        #expect(chain.authKey.publicKey.isValidSignature(sig, for: KauriChain.addMessage(chainID: chain.id, device: device.publicKey)))
+        let recipient = device.recipient
+        let sig = chain.addSignature(sign: device.publicKey, x25519: recipient.x25519, mlkem: recipient.mlkem)
+        #expect(chain.signed(sign: device.publicKey, x25519: recipient.x25519, mlkem: recipient.mlkem, signature: sig))
+        #expect(!chain.signed(sign: device.publicKey, x25519: Data(count: 32), mlkem: recipient.mlkem, signature: sig))
+        let next = v.hex("forward", "next_secret")
+        #expect(chain.forwardPayload(next: next) == v.hex("forward", "payload"))
+        #expect(try chain.openForward(v.hex("forward", "payload")) == next)
+        #expect(throws: (any Error).self) { try chain.openForward(next + Data(count: 32)) }
         let req = v.section("request")
+        #expect(chain.id == Data(hex: req["chain_id"] as! String))
         let msg = KauriRequest.message(method: req["method"] as! String, path: req["path"] as! String,
                                        time: Int64(req["time"] as! Int), nonce: Data(hex: req["nonce"] as! String),
-                                       body: Data((req["body"] as! String).utf8))
+                                       chainID: chain.id, body: Data((req["body"] as! String).utf8))
         #expect(msg == Data(hex: req["message"] as! String))
         #expect(device.sign.publicKey.isValidSignature(Data(hex: req["signature"] as! String), for: msg))
 
@@ -81,6 +88,8 @@ struct SyncVectorTests {
         if #available(macOS 26.0, *) {
             #expect(try device.openEnvelope(chainID: chain.id, epoch: 1, envelope: v.hex("envelopes", "hybrid")) == dk)
             #expect(Kauri.sha256(device.mlkemPublic) == v.hex("device", "mlkem768_pub_sha256"))
+            #expect(chain.signed(sign: device.publicKey, x25519: recipient.x25519, mlkem: device.mlkemPublic, signature: v.hex("device", "chain_sig")))
+            #expect(try chain.openForward(try device.openEnvelope(chainID: chain.id, epoch: 0, envelope: v.hex("forward", "envelope"))) == next)
             let env = try KauriEnvelope.seal(chainID: chain.id, epoch: 7, to: device.recipient, payload: dk)
             #expect(try device.openEnvelope(chainID: chain.id, epoch: 7, envelope: env) == dk)
         }

@@ -62,16 +62,27 @@ let device = KauriDevice(
 check(device.publicKey == hex("device", "ed25519_pub"), "device key")
 check(device.id == hex("device", "device_id"), "device id")
 check(device.recipient.x25519 == hex("device", "x25519_pub"), "x25519 pub")
+let r = device.recipient
+let sig = chain.addSignature(sign: device.publicKey, x25519: r.x25519, mlkem: r.mlkem)
+check(chain.signed(sign: device.publicKey, x25519: r.x25519, mlkem: r.mlkem, signature: sig), "chain_sig round trip")
+check(!chain.signed(sign: device.publicKey, x25519: Data(count: 32), mlkem: r.mlkem, signature: sig), "a swapped key fails chain_sig")
+let next = hex("forward", "next_secret")
+check(chain.forwardPayload(next: next) == hex("forward", "payload"), "forward payload")
+check((try? chain.openForward(hex("forward", "payload"))) == next, "open forward")
+check((try? chain.openForward(next + Data(count: 32))) == nil, "a forged forward is rejected")
 let req = sec("request")
+check(chain.id == Data(hex: req["chain_id"] as! String), "request chain_id")
 let msg = KauriRequest.message(method: req["method"] as! String, path: req["path"] as! String,
                                time: Int64(req["time"] as! Int), nonce: Data(hex: req["nonce"] as! String),
-                               body: Data((req["body"] as! String).utf8))
+                               chainID: chain.id, body: Data((req["body"] as! String).utf8))
 check(msg == Data(hex: req["message"] as! String), "request message")
 check(device.sign.publicKey.isValidSignature(Data(hex: req["signature"] as! String), for: msg), "request signature")
 check((try? device.openEnvelope(chainID: chain.id, epoch: 1, envelope: hex("envelopes", "x25519"))) == dk, "x25519 envelope")
 if #available(macOS 26.0, *) {
     check((try? device.openEnvelope(chainID: chain.id, epoch: 1, envelope: hex("envelopes", "hybrid"))) == dk, "hybrid envelope")
     check(Kauri.sha256(device.mlkemPublic) == hex("device", "mlkem768_pub_sha256"), "ML-KEM public key")
+    check(chain.signed(sign: device.publicKey, x25519: r.x25519, mlkem: device.mlkemPublic, signature: hex("device", "chain_sig")), "chain_sig vector")
+    check((try? device.openEnvelope(chainID: chain.id, epoch: 0, envelope: hex("forward", "envelope"))).flatMap { try? chain.openForward($0) } == next, "forward envelope")
     let env = try KauriEnvelope.seal(chainID: chain.id, epoch: 7, to: device.recipient, payload: dk)
     check((try? device.openEnvelope(chainID: chain.id, epoch: 7, envelope: env)) == dk, "envelope round trip")
     check((try? device.openEnvelope(chainID: chain.id, epoch: 8, envelope: env)) == nil, "envelope of another epoch")
