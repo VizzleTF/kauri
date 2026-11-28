@@ -42,7 +42,7 @@ public sealed class SyncEngine
     CancellationTokenSource? _loop;
     readonly HashSet<string> _deletedHistory = new();
     readonly DispatcherTimer _debounce;
-    bool _running, _again, _hooked;
+    bool _running, _again, _pullAgain, _hooked;
 
     SyncEngine()
     {
@@ -257,6 +257,7 @@ public sealed class SyncEngine
         var key = await nextClient.CreateChain(State.DeviceName);
         _loop?.Cancel();
         Rekey(next);
+        SyncSecrets.Of(next, _device).Save();
         _chain = next;
         _dataKeys.Clear();
         _dataKeys[1] = key;
@@ -270,7 +271,6 @@ public sealed class SyncEngine
             return (r.Id, KauriEnvelope.Seal(old.Chain.Id, 0, r, next.Secret));
         }).ToList();
         if (envelopes.Count > 0) await old.Forward(envelopes);
-        SyncSecrets.Of(next, _device).Save();
         Start();
         NewSyncCode?.Invoke(next.Words);
     }
@@ -411,13 +411,16 @@ public sealed class SyncEngine
     public async Task Sync(bool pull)
     {
         if (!IsOn || Client() is not SyncClient client) return;
-        if (_running) { _again = true; return; }
+        if (_running) { _again = true; _pullAgain |= pull; return; }
         _running = true;
+        int rounds = 0;
         try
         {
             do
             {
                 _again = false;
+                pull |= _pullAgain;
+                _pullAgain = false;
                 SetStatus(SyncStatus.Syncing);
                 try
                 {
@@ -431,7 +434,7 @@ public sealed class SyncEngine
                 catch (SyncApiException e) when (e.Status == 410 && e.Error == "forwarded") { await FollowForward(); return; }
                 catch (Exception e) { SetStatus(SyncStatus.Offline, e.Message); }
                 State.Save();
-            } while (_again);
+            } while (_again && ++rounds < 5);
         }
         finally { _running = false; }
     }
@@ -452,7 +455,7 @@ public sealed class SyncEngine
                 return;
             }
             records.AddRange(page.Records);
-            cursor = Math.Max(cursor, page.Version);
+            cursor = page.More && page.Records.Count > 0 ? page.Records[^1].Version : Math.Max(cursor, page.Version);
             if (!page.More) break;
         }
         // From here on nothing awaits, so no local edit can slip in between
@@ -524,15 +527,19 @@ public sealed class SyncEngine
     {
         if (_chain == null || !_dataKeys.TryGetValue(_epoch, out var key)) return;
         var dirty = State.Records.Where(e => e.Value.Dirty).OrderBy(e => e.Value.Kind == "folder" ? 0 : 1).ToList();
-        foreach (var batch in dirty.Chunk(200))
+        // 120 bodies of the 64 KiB bucket stay under the server's 8 MiB batch limit
+        foreach (var batch in dirty.Chunk(120))
         {
             var records = new List<RecordIn>();
             foreach (var (id, r) in batch)
             {
                 if (KauriCrypto.UnB64(id) is not byte[] rid) continue;
-                var sealedBody = _chain.SealRecord(key, _epoch, rid, Encoding.UTF8.GetBytes(r.Body));
+                byte[] sealedBody;
+                try { sealedBody = _chain.SealRecord(key, _epoch, rid, Encoding.UTF8.GetBytes(r.Body)); }
+                catch (SyncCryptoException) { continue; } // over the largest padding bucket, §4.3
                 records.Add(new RecordIn(id, _epoch, KauriCrypto.B64(sealedBody), RecordBody.Parse(r.Body).IsDeleted, r.Version));
             }
+            if (records.Count == 0) continue;
             List<long> versions;
             try { versions = await client.Write(records); }
             catch (SyncApiException e) when (e.Status == 409)

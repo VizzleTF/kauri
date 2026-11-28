@@ -14,11 +14,11 @@ The words MUST, SHOULD and MAY are used as in RFC 2119.
 
 | Threat | Protection |
 |---|---|
-| A server operator, or an intruder on the server, reads or changes data | Content is encrypted and authenticated on the device (§4). A changed record fails to decrypt. A record replayed from an older version is rejected (§6) |
+| A server operator, or an intruder on the server, reads or changes data | Content is encrypted and authenticated on the device (§4). A changed record fails to decrypt. The server can still serve an older body of a record under a new version; the HLC merge (§5) keeps the newer state on devices that already have it |
 | The server learns what kind of data you keep | Record IDs are random-looking, all kinds share one opaque type, sizes are padded into buckets (§4.3), and records carry no plaintext timestamps |
 | A network attacker | TLS. On top of it, every request is signed by a device key and can be used once (§7.1) |
 | A lost or stolen device | Remove it from another device. The chain moves to new keys, and the removed device can read or write nothing new (§9) |
-| Harvest now, decrypt later | Data keys travel to devices in hybrid X25519 + ML-KEM-768 envelopes (§3.3). Every symmetric key is 256 bits |
+| Harvest now, decrypt later | Devices take data keys from `wrapped`, under a 256-bit key derived from the sync code (§3.2). Chain moves use hybrid X25519 + ML-KEM-768 envelopes (§3.3) |
 | A guessable secret | Nobody types a password. The sync code holds 256 bits, and pairing codes allow a single online guess (§8) |
 
 Kauri Sync does not protect against malware that runs as you on a device of the chain. It also does not hide traffic patterns from the server operator, who sees your IP address, when your devices sync, and roughly how much the chain stores. Running your own server, or reaching it over Tor, limits this.
@@ -68,6 +68,8 @@ Content is encrypted with a random 32-byte *data key* `DK`. Each data key belong
 
 - `wrapped = seal(wrap_key, DK, "kauri-sync/v1/keyring" || chain_id || u32(epoch))`, which lets a device that has only the sync code recover;
 - one envelope (§3.3) of `DK` for each member device.
+
+Clients MUST take `DK` from `wrapped`. Envelopes are not authenticated by any key the server lacks, so a server could replace one with an envelope of its own key.
 
 A member MAY start a new epoch at any time (§7.2, `POST /v1/keyring`). New writes then use it; older records stay readable until they are rewritten.
 
@@ -151,7 +153,7 @@ body = seal(DK_epoch, pad(json), chain_id || record id || u32(epoch))
 
 ### 4.4 Blobs
 
-Clip images and file contents are blobs, uploaded before the record that names them.
+Clip images and file contents are blobs, uploaded before the record that names them. The v1 clients for Windows and macOS do not upload blobs yet, so images, files and the `settings` kind do not sync.
 
 ```
 blob = seal(DK_epoch, pad64(content), chain_id || blob id || u32(epoch))
@@ -243,7 +245,7 @@ A *device info* object is `{"sign", "x25519", "mlkem", "name"}`:
 | `DELETE /v1/devices/{id}` | | `204` |
 | `GET /v1/keyring` | | `{"epoch", "wrapped", "envelope"}`. `envelope` is this device's envelope, or empty |
 | `POST /v1/keyring` | `{"epoch", "wrapped", "envelopes": [{"device", "envelope"}]}` | `201`. `epoch` MUST be the current one plus 1 |
-| `GET /v1/changes?since=V&limit=N` | | `{"version", "records": [...], "more"}`. `410 {"error": "resync"}` if `since` is too old |
+| `GET /v1/changes?since=V&limit=N` | | `{"version", "records": [...], "more"}`. `version` is the `since` of the next request: the last record's version when `more` is true, the chain head otherwise. `410 {"error": "resync"}` if `since` is too old |
 | `POST /v1/records` | `{"records": [{"id", "epoch", "body", "deleted", "blobs"?, "if_version"?}]}` | `{"versions": [...]}`. `409 {"conflicts": [ids]}`. `413` over a limit |
 | `PUT /v1/blobs/{id}` | the blob bytes | `204` |
 | `GET /v1/blobs/{id}` | | the blob bytes, or `404` |
@@ -342,7 +344,7 @@ A device that leaves on its own (Turn Off Sync) removes itself with `DELETE /v1/
 - A clip is never stored or synced if:
   - its source marks it as confidential (`ExcludeClipboardContentFromMonitorProcessing`, or `CanIncludeInClipboardHistory` = 0, on Windows; `org.nspasteboard.ConcealedType` on macOS);
   - it comes from an excluded app.
-- Synced history is capped at the smaller of the local history limit and 500 clips. Images sync only when that is turned on separately, and only up to 4 MiB each.
+- Synced history is capped at 500 clips. Images do not sync in v1 clients (§4.4).
 - Clients SHOULD batch writes over a 2-second window, and SHOULD refetch on `changed` within 1 second.
 
 ## 11. Versioning

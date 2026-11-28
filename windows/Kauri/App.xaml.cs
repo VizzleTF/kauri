@@ -125,13 +125,13 @@ public partial class App : Application
 
     void Quit()
     {
-        ClipService.Shared.ApplicationWillTerminate();
         _tray?.Dispose();
         Shutdown();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        ClipService.Shared.ApplicationWillTerminate();
         _tray?.Dispose();
         base.OnExit(e);
     }

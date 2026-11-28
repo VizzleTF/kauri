@@ -112,6 +112,8 @@ public sealed class AppSettings
         }
         catch
         {
+            // keep the unreadable file: the next save overwrites settings.json
+            try { File.Copy(FilePath, FilePath + ".bad", true); } catch (IOException) { }
             Shared = new AppSettings();
         }
     }

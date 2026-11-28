@@ -189,10 +189,7 @@ struct KauriSyncClient {
     func dataKey() async throws -> (UInt32, Data) {
         struct Keyring: Decodable { let epoch: UInt32; let wrapped: String; let envelope: String? }
         let keyring = try await call("GET", "/v1/keyring", as: Keyring.self)
-        if let env = keyring.envelope.flatMap(Kauri.unb64), !env.isEmpty,
-           let key = try? device.openEnvelope(chainID: chain.id, epoch: keyring.epoch, envelope: env), key.count == 32 {
-            return (keyring.epoch, key)
-        }
+        // only the wrapped copy is authenticated by a key the server lacks; an envelope can be forged
         guard let wrapped = Kauri.unb64(keyring.wrapped) else { throw KauriCryptoError.badLength }
         return (keyring.epoch, try chain.unwrap(wrapped, epoch: keyring.epoch))
     }
