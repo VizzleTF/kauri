@@ -327,7 +327,9 @@ final class KauriSync: ObservableObject {
         try await push(nextClient)
 
         let payload = old.chain.forwardPayload(next: next.secret)
-        let envelopes = try remaining.map { r in (r.id, try KauriEnvelope.seal(chainID: old.chain.id, epoch: 0, to: r, payload: payload)) }
+        let envelopes = try remaining.map { recipient in
+            (recipient.id, try KauriEnvelope.seal(chainID: old.chain.id, epoch: 0, to: recipient, payload: payload))
+        }
         if !envelopes.isEmpty {
             try await old.forward(envelopes: envelopes.map { (deviceID: $0.0, envelope: $0.1) })
         }
@@ -549,8 +551,8 @@ final class KauriSync: ObservableObject {
                 return try await pull(client)
             }
             // a record of an epoch we cannot open must not be skipped: fetch its key or fail before the cursor moves
-            for e in Set(page.records.map(\.epoch)) where dataKeys[e] == nil {
-                dataKeys[e] = try await client.dataKey(epoch: e).1
+            for missing in Set(page.records.map(\.epoch)) where dataKeys[missing] == nil {
+                dataKeys[missing] = try await client.dataKey(epoch: missing).1
             }
             records += page.records
             cursor = page.more ? page.records.last?.version ?? page.version : max(cursor, page.version)

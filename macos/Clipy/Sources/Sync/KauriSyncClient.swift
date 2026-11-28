@@ -33,10 +33,10 @@ struct KauriDeviceEntry: Decodable, Identifiable, Equatable {
 
     /// The device's envelope keys, if a holder of the sync code signed them (§7.2).
     func verified(by chain: KauriChain) -> KauriRecipient? {
-        guard let sign = Kauri.unb64(self.sign), let x = Kauri.unb64(x25519), let sig = chain_sig.flatMap(Kauri.unb64) else { return nil }
-        let ml = Kauri.unb64(mlkem ?? "") ?? Data()
-        guard chain.signed(sign: sign, x25519: x, mlkem: ml, signature: sig) else { return nil }
-        return KauriRecipient(id: Kauri.sha256(sign).prefix(16), x25519: x, mlkem: ml)
+        guard let sign = Kauri.unb64(self.sign), let x25519Key = Kauri.unb64(x25519), let sig = chain_sig.flatMap(Kauri.unb64) else { return nil }
+        let mlkemKey = Kauri.unb64(mlkem ?? "") ?? Data()
+        guard chain.signed(sign: sign, x25519: x25519Key, mlkem: mlkemKey, signature: sig) else { return nil }
+        return KauriRecipient(id: Kauri.sha256(sign).prefix(16), x25519: x25519Key, mlkem: mlkemKey)
     }
 }
 
@@ -176,8 +176,8 @@ struct KauriSyncClient {
     }
 
     private func selfSignature() -> Data {
-        let r = device.recipient
-        return chain.addSignature(sign: device.publicKey, x25519: r.x25519, mlkem: r.mlkem)
+        let own = device.recipient
+        return chain.addSignature(sign: device.publicKey, x25519: own.x25519, mlkem: own.mlkem)
     }
 
     /// Adds another device as a member, with its envelope of the data key.
