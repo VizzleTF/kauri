@@ -108,6 +108,13 @@ public sealed class MenuManager
 
     public List<MacMenuItem> SnippetItems(List<SnippetFolder> folders)
     {
+        // an empty NSMenu never appears, so the shortcut seemed dead until a snippet existed
+        if (!folders.Any(f => f.IsEnabled))
+            return new List<MacMenuItem>
+            {
+                MacMenuItem.Header("No snippets yet"),
+                new() { Title = "Edit Snippets…", Glyph = "", Action = () => EditSnippets?.Invoke() },
+            };
         var menu = new List<MacMenuItem>();
         AddSnippetItems(menu, folders);
         return menu;
