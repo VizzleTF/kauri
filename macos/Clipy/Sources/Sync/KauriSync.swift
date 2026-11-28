@@ -63,6 +63,7 @@ final class KauriSync: ObservableObject {
     private var deletedHistory = Set<String>()
     private var running = false
     private var again = false
+    private var pullAgain = false
 
     static let historyCap = 500
     private static let kinds = ["folder", "snippet", "clip"]
@@ -306,6 +307,8 @@ final class KauriSync: ObservableObject {
         let key = try await nextClient.createChain(deviceName: state.deviceName)
         loop?.cancel()
         rekey(to: next)
+        try SyncSecrets(chainSecret: next.secret, device: device).save()
+        secrets = SyncSecrets.load()
         chain = next
         dataKeys = [1: key]
         epoch = 1
@@ -319,8 +322,6 @@ final class KauriSync: ObservableObject {
         if !envelopes.isEmpty {
             try await old.forward(envelopes: envelopes.map { (deviceID: $0.0, envelope: $0.1) })
         }
-        try SyncSecrets(chainSecret: next.secret, device: device).save()
-        secrets = SyncSecrets.load()
         newSyncCode = next.words
         start()
     }
@@ -474,12 +475,17 @@ final class KauriSync: ObservableObject {
         guard isOn, let client = client() else { return }
         if running {
             again = true
+            pullAgain = pullAgain || pull
             return
         }
         running = true
         defer { running = false }
+        var pull = pull
+        var rounds = 0
         repeat {
             again = false
+            pull = pull || pullAgain
+            pullAgain = false
             status = .syncing
             do {
                 if dataKeys[epoch] == nil { try await loadDataKey(client) }
@@ -497,7 +503,8 @@ final class KauriSync: ObservableObject {
                 status = .offline(error.localizedDescription)
             }
             state.save()
-        } while again
+            rounds += 1
+        } while again && rounds < 5
     }
 
     private func pull(_ client: KauriSyncClient) async throws {
@@ -513,7 +520,7 @@ final class KauriSync: ObservableObject {
                 return try await pull(client)
             }
             records += page.records
-            cursor = max(cursor, page.version)
+            cursor = page.more ? page.records.last?.version ?? page.version : max(cursor, page.version)
             if !page.more { break }
         }
         // From here to the end nothing awaits, so no local edit can slip in
@@ -581,13 +588,16 @@ final class KauriSync: ObservableObject {
     private func push(_ client: KauriSyncClient) async throws {
         guard let chain, let key = dataKeys[epoch] else { return }
         let dirty = state.records.filter(\.value.dirty).sorted { ($0.value.kind == "folder" ? 0 : 1) < ($1.value.kind == "folder" ? 0 : 1) }
-        for batch in stride(from: 0, to: dirty.count, by: 200).map({ Array(dirty[$0..<min($0 + 200, dirty.count)]) }) {
+        // 120 bodies of the 64 KiB bucket stay under the server's 8 MiB batch limit
+        for batch in stride(from: 0, to: dirty.count, by: 120).map({ Array(dirty[$0..<min($0 + 120, dirty.count)]) }) {
             var records = [KauriRecordIn]()
             for (id, r) in batch {
-                guard let rid = Kauri.unb64(id), let body = try? RecordBody(json: r.body) else { continue }
-                let sealed = try chain.sealRecord(dataKey: key, epoch: epoch, recordID: rid, plaintext: r.body)
+                // a body over the largest padding bucket is never pushed, §4.3
+                guard let rid = Kauri.unb64(id), let body = try? RecordBody(json: r.body),
+                      let sealed = try? chain.sealRecord(dataKey: key, epoch: epoch, recordID: rid, plaintext: r.body) else { continue }
                 records.append(KauriRecordIn(id: id, epoch: epoch, body: Kauri.b64(sealed), deleted: body.isDeleted, blobs: nil, ifVersion: r.version))
             }
+            if records.isEmpty { continue }
             do {
                 let versions = try await client.write(records)
                 for (rec, version) in zip(records, versions) {

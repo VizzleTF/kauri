@@ -170,15 +170,7 @@ public sealed class SyncClient(Uri server, KauriChain chain, KauriDevice device)
     public async Task<(uint Epoch, byte[] Key)> DataKey()
     {
         var k = await Call<Keyring>("GET", "/v1/keyring") ?? throw new SyncCryptoException("no keyring");
-        if (KauriCrypto.UnB64(k.Envelope) is { Length: > 0 } env)
-        {
-            try
-            {
-                var key = Device.OpenEnvelope(Chain.Id, k.Epoch, env);
-                if (key.Length == 32) return (k.Epoch, key);
-            }
-            catch (SyncCryptoException) { }
-        }
+        // only the wrapped copy is authenticated by a key the server lacks; an envelope can be forged
         return (k.Epoch, Chain.Unwrap(KauriCrypto.UnB64(k.Wrapped) ?? throw new SyncCryptoException("bad keyring"), k.Epoch));
     }
 
