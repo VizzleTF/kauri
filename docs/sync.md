@@ -1,4 +1,4 @@
-# Kauri Sync, protocol version 1
+# Kauri Sync, protocol version 2
 
 Kauri Sync keeps snippets the same on all your devices, and clipboard history too if you turn it on. It is built around three properties:
 
@@ -9,6 +9,8 @@ Kauri Sync keeps snippets the same on all your devices, and clipboard history to
 The server is [kauri-sync](https://github.com/VizzleTF/kauri-sync). The Windows and macOS clients and the server implement this document. The test vectors in [`sync-vectors/v1.json`](sync-vectors/v1.json) are part of the specification, and every client MUST pass them. [`sync-vectors/check.py`](sync-vectors/check.py) checks them independently of the reference code, using PyNaCl (libsodium) and `cryptography`. The check covers SPAKE2 through libsodium's edwards25519 operations.
 
 The words MUST, SHOULD and MAY are used as in RFC 2119.
+
+Version 2 keeps the keys, records and envelopes of version 1, so existing chains and their data carry over. It changes three things that a server could abuse in version 1: `chain_sig` now covers all three public keys of a device (§7.2), request signatures cover the chain (§7.1), and a chain move carries a tag only members can make (§9). Labels that did not change keep their `v1` text.
 
 ## 1. Threat model
 
@@ -71,7 +73,7 @@ Content is encrypted with a random 32-byte *data key* `DK`. Each data key belong
 
 Clients MUST take `DK` from `wrapped`. Envelopes are not authenticated by any key the server lacks, so a server could replace one with an envelope of its own key.
 
-A member MAY start a new epoch at any time (§7.2, `POST /v1/keyring`). New writes then use it; older records stay readable until they are rewritten.
+A member MAY start a new epoch at any time (§7.2, `POST /v1/keyring`). New writes then use it; older records stay readable until they are rewritten. A client that meets a record of an epoch it has no key for MUST fetch that key with `GET /v1/keyring?epoch=N` before it moves its cursor past the record.
 
 ### 3.3 Devices and envelopes
 
@@ -153,7 +155,7 @@ body = seal(DK_epoch, pad(json), chain_id || record id || u32(epoch))
 
 ### 4.4 Blobs
 
-Clip images and file contents are blobs, uploaded before the record that names them. The v1 clients for Windows and macOS do not upload blobs yet, so images, files and the `settings` kind do not sync.
+Clip images and file contents are blobs, uploaded before the record that names them. The Windows and macOS clients do not upload blobs yet, so images, files and the `settings` kind do not sync.
 
 ```
 blob = seal(DK_epoch, pad64(content), chain_id || blob id || u32(epoch))
@@ -210,17 +212,17 @@ Endpoints live under `/v1/`. Request and response bodies are JSON, except blobs.
 Every request except the unauthenticated pairing ones carries these headers:
 
 ```
-Kauri-Protocol:  1
+Kauri-Protocol:  2
 Kauri-Chain:     base64url(chain_id)
 Kauri-Device:    base64url(device public key)
 Kauri-Time:      Unix seconds
 Kauri-Nonce:     base64url(16 random bytes)
 Kauri-Signature: base64url(Ed25519(device key,
-                   "kauri-sync/v1/request" || 0x00 || method || 0x00 || path with query
-                   || 0x00 || Kauri-Time || 0x00 || nonce || SHA-256(body)))
+                   "kauri-sync/v2/request" || 0x00 || method || 0x00 || path with query
+                   || 0x00 || Kauri-Time || 0x00 || nonce || chain_id || SHA-256(body)))
 ```
 
-The nonce keeps two identical requests sent in the same second from getting the same signature. Ed25519 is deterministic, so without it the second request would look like a replay.
+The nonce keeps two identical requests sent in the same second from getting the same signature. Ed25519 is deterministic, so without it the second request would look like a replay. `chain_id` is the raw 32 bytes of `Kauri-Chain`, so a request cannot be replayed against another chain the device belongs to, such as the old and new chain of a move. A server answers `400` to any other `Kauri-Protocol`.
 
 The server answers `401` in three cases:
 
@@ -240,10 +242,10 @@ A *device info* object is `{"sign", "x25519", "mlkem", "name"}`:
 | Request | Body | Answer |
 |---|---|---|
 | `POST /v1/chains` | `{"chain_key", "chain_sig", "device", "keyring": {"epoch": 1, "wrapped", "envelope"}}` | `201`. `409` if the chain exists |
-| `POST /v1/devices` | `{"device", "chain_sig"?, "envelope"?}` | `201` |
-| `GET /v1/devices` | | `{"devices": [{"id", "sign", "x25519", "mlkem", "name", "added", "removed"}]}` |
+| `POST /v1/devices` | `{"device", "chain_sig", "envelope"?}` | `201`. A member that posts itself again replaces its keys and `chain_sig` |
+| `GET /v1/devices` | | `{"devices": [{"id", "sign", "x25519", "mlkem", "name", "chain_sig", "added", "removed"}]}` |
 | `DELETE /v1/devices/{id}` | | `204` |
-| `GET /v1/keyring` | | `{"epoch", "wrapped", "envelope"}`. `envelope` is this device's envelope, or empty |
+| `GET /v1/keyring?epoch=N` | | `{"epoch", "wrapped", "envelope"}` of epoch `N`, or of the current epoch without `epoch`. `envelope` is this device's envelope, or empty. `404` for an unknown epoch |
 | `POST /v1/keyring` | `{"epoch", "wrapped", "envelopes": [{"device", "envelope"}]}` | `201`. `epoch` MUST be the current one plus 1 |
 | `GET /v1/changes?since=V&limit=N` | | `{"version", "records": [...], "more"}`. `version` is the `since` of the next request: the last record's version when `more` is true, the chain head otherwise. `410 {"error": "resync"}` if `since` is too old |
 | `POST /v1/records` | `{"records": [{"id", "epoch", "body", "deleted", "blobs"?, "if_version"?}]}` | `{"versions": [...]}`. `409 {"conflicts": [ids]}`. `413` over a limit |
@@ -255,8 +257,11 @@ A *device info* object is `{"sign", "x25519", "mlkem", "name"}`:
 
 **Who may add a device:**
 
-- `POST /v1/chains` is signed by the device that creates the chain. `chain_sig = Ed25519(chain key, "kauri-sync/v1/add" || 0x00 || chain_id || device public key)` proves that the device knows the sync code.
-- `POST /v1/devices` is either signed by a member, which adds the device in the body and sends its envelope, or signed by the new device itself together with `chain_sig`. The second form is recovery from the 24 words.
+- Every device comes with `chain_sig = Ed25519(chain key, "kauri-sync/v2/add" || 0x00 || chain_id || sign || x25519 || mlkem)`, made by someone who holds the sync code. The server checks it and returns it in `GET /v1/devices`.
+- `POST /v1/chains` is signed by the device that creates the chain.
+- `POST /v1/devices` is either signed by a member, which adds the device in the body and sends its envelope, or signed by the new device itself. The second form is recovery from the 24 words.
+- Before a client seals anything to a device (§9), it MUST check that device's `chain_sig` and skip the device if the check fails. The server does not know the chain key, so it cannot swap a device's keys for its own.
+- A device added before version 2 has no such `chain_sig`. On its next start it posts itself again with one.
 
 **Batches.** `POST /v1/records` is all or nothing. Versions are returned in the order of the request.
 
@@ -331,10 +336,10 @@ The removed device knows `CS`, so removing it MUST move the chain to new secrets
 
 1. Removes the device: `DELETE /v1/devices/{id}`. From then on the server refuses its requests.
 2. Creates `CS'` and a new chain with `POST /v1/chains`, and re-encrypts and uploads every live record and blob under the new chain's `DK'`.
-3. Calls `POST /v1/forward` on the old chain with an envelope of `CS'` for every remaining member. The envelopes are sealed as in §3.3 with the old `chain_id` and epoch 0. The server deletes the old chain's records, blobs and keyring. It keeps only the forwarding envelopes, for 90 days. It answers every other request on the old chain with `410 {"error": "forwarded"}` and sends `forwarded` events.
-4. Every remaining device reads its envelope with `GET /v1/forward`. It opens the envelope with its own keys, which also works for devices that were offline during the move. It then switches to `CS'`, joins the new chain with `chain_sig`, and syncs.
+3. Calls `POST /v1/forward` on the old chain with an envelope for every remaining member whose `chain_sig` checks out. The envelopes are sealed as in §3.3 with the old `chain_id` and epoch 0. Their payload is `CS' || HMAC-SHA-256(wrap_key, "kauri-sync/v2/forward" || 0x00 || chain_id || CS')`, with the old chain's `wrap_key` and `chain_id`. The server deletes the old chain's records, blobs and keyring. It keeps only the forwarding envelopes, for 90 days. It answers every other request on the old chain with `410 {"error": "forwarded"}` and sends `forwarded` events.
+4. Every remaining device reads its envelope with `GET /v1/forward`. It opens the envelope with its own keys, which also works for devices that were offline during the move, and MUST check the tag before it follows. The server does not know `wrap_key`, so it cannot make a device follow a chain of its own. It then switches to `CS'`, joins the new chain with `chain_sig`, and syncs.
 
-The app shows the new sync code and suggests writing it down. The removed device keeps what it had already downloaded and nothing more.
+The app shows the new sync code and suggests writing it down. The removed device keeps what it had already downloaded and nothing more. It does know the old `wrap_key` and chain key, so a server that works together with the removed device can still forge a forward or a device; the protocol does not defend against that pair.
 
 A device that leaves on its own (Turn Off Sync) removes itself with `DELETE /v1/devices/{its id}` and forgets `CS`. The chain does not move: the device was trusted until it left, and the user can still remove it from another device to force a move.
 
@@ -344,9 +349,9 @@ A device that leaves on its own (Turn Off Sync) removes itself with `DELETE /v1/
 - A clip is never stored or synced if:
   - its source marks it as confidential (`ExcludeClipboardContentFromMonitorProcessing`, or `CanIncludeInClipboardHistory` = 0, on Windows; `org.nspasteboard.ConcealedType` on macOS);
   - it comes from an excluded app.
-- Synced history is capped at 500 clips. Images do not sync in v1 clients (§4.4).
+- Synced history is capped at 500 clips. Images do not sync yet (§4.4).
 - Clients SHOULD batch writes over a 2-second window, and SHOULD refetch on `changed` within 1 second.
 
 ## 11. Versioning
 
-Clients send `Kauri-Protocol: 1`. A change to the record format, the key schedule or the signatures raises the protocol version. A server MAY serve several versions at the same time.
+Clients send `Kauri-Protocol: 2`. A change to the record format, the key schedule or the signatures raises the protocol version. A server MAY serve several versions at the same time.

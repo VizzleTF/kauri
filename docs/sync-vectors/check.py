@@ -64,11 +64,19 @@ dpub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.Pu
 check("device pub", dpub.hex(), d["ed25519_pub"])
 check("device_id", hashlib.sha256(dpub).digest()[:16].hex(), d["device_id"])
 chain_sk = Ed25519PrivateKey.from_private_bytes(seed)
-check("chain_sig", chain_sk.sign(b"kauri-sync/v1/add\x00" + H(c["chain_id"]) + dpub).hex(), d["chain_sig"])
+xpub = X25519PrivateKey.from_private_bytes(H(d["x25519_priv"])).public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+mlpub = H(d["mlkem768_pub"])
+check("mlkem pub", hashlib.sha256(mlpub).hexdigest(), d["mlkem768_pub_sha256"])
+check("chain_sig", chain_sk.sign(b"kauri-sync/v2/add\x00" + H(c["chain_id"]) + dpub + xpub + mlpub).hex(), d["chain_sig"])
+
+f = v["forward"]
+tag = hmac.new(H(c["wrap_key"]), b"kauri-sync/v2/forward\x00" + H(c["chain_id"]) + H(f["next_secret"]), hashlib.sha256).digest()
+check("forward payload", (H(f["next_secret"]) + tag).hex(), f["payload"])
 
 q = v["request"]
-msg = (b"kauri-sync/v1/request\x00" + q["method"].encode() + b"\x00" + q["path"].encode() + b"\x00"
-       + str(q["time"]).encode() + b"\x00" + H(q["nonce"]) + hashlib.sha256(q["body"].encode()).digest())
+check("request chain_id", q["chain_id"], c["chain_id"])
+msg = (b"kauri-sync/v2/request\x00" + q["method"].encode() + b"\x00" + q["path"].encode() + b"\x00"
+       + str(q["time"]).encode() + b"\x00" + H(q["nonce"]) + H(q["chain_id"]) + hashlib.sha256(q["body"].encode()).digest())
 check("request message", msg.hex(), q["message"])
 check("request signature", sk.sign(msg).hex(), q["signature"])
 

@@ -10,6 +10,31 @@ public sealed class PasteService
     /// <summary>Window that was in front before Clipy showed a menu; paste goes there.</summary>
     public IntPtr TargetWindow { get; set; }
 
+    // a click on the tray icon puts the taskbar in front; these never receive a paste
+    static readonly HashSet<string> ShellClasses = ["Shell_TrayWnd", "Shell_SecondaryTrayWnd", "NotifyIconOverflowWindow", "TopLevelWindowForOverflowXamlIsland"];
+    Native.WinEventProc? _foregroundProc;
+    IntPtr _lastApp;
+
+    /// <summary>Remembers the last window of another app that was in front. Call once on the UI thread.</summary>
+    public void TrackForeground()
+    {
+        _foregroundProc = (_, _, hwnd, _, _, _, _) => { if (IsOtherApp(hwnd)) _lastApp = hwnd; };
+        Native.SetWinEventHook(Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _foregroundProc, 0, 0, 0);
+        var fg = Native.GetForegroundWindow();
+        if (IsOtherApp(fg)) _lastApp = fg;
+    }
+
+    /// <summary>Where a menu opened over <paramref name="foreground"/> pastes: the app behind the taskbar if the taskbar is in front.</summary>
+    public IntPtr TargetFor(IntPtr foreground) =>
+        ShellClasses.Contains(Native.ClassName(foreground)) && Native.IsWindow(_lastApp) ? _lastApp : foreground;
+
+    static bool IsOtherApp(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        Native.GetWindowThreadProcessId(hwnd, out var pid);
+        return pid != Environment.ProcessId && !ShellClasses.Contains(Native.ClassName(hwnd));
+    }
+
     // Modifier picker values in Clipy: 0 Command(⌘=Ctrl), 1 Shift, 2 Control(⌃=Win), 3 Option(⌥=Alt)
     static bool IsPressedModifier(int flag) => flag switch
     {

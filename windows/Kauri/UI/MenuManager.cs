@@ -55,7 +55,7 @@ public sealed class MenuManager
         // NSMenu with no items never appears (e.g. the snippet hot key with no snippet folders).
         if (items.Count == 0 || items.All(i => i.IsSeparator)) return;
         var fg = Native.GetForegroundWindow();
-        PasteService.Shared.TargetWindow = fg;
+        PasteService.Shared.TargetWindow = PasteService.Shared.TargetFor(fg);
         var p = at ?? CursorDip();
         var w = new MacMenuWindow(items);
         w.MenuClosed += () => { if (_open == w) _open = null; };

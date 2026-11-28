@@ -8,7 +8,7 @@ using System.Text.Json.Serialization;
 
 namespace Kauri.Sync;
 
-// The HTTP side of Kauri Sync v1 (docs/sync.md §7): signed requests, the
+// The HTTP side of Kauri Sync v2 (docs/sync.md §7): signed requests, the
 // endpoints, Server-Sent Events and the unsigned pairing requests.
 
 public sealed class SyncApiException(int status, string message) : Exception(message.Length == 0 ? $"HTTP {status}" : $"{message} (HTTP {status})")
@@ -29,8 +29,18 @@ public sealed record DeviceEntry(
     [property: JsonPropertyName("x25519")] string X25519,
     [property: JsonPropertyName("mlkem")] string? MLKem,
     [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("chain_sig")] string? ChainSig,
     [property: JsonPropertyName("added")] long Added,
-    [property: JsonPropertyName("removed")] long? Removed);
+    [property: JsonPropertyName("removed")] long? Removed)
+{
+    /// <summary>The device's envelope keys, if a holder of the sync code signed them (§7.2); null otherwise.</summary>
+    public KauriRecipient? Verified(KauriChain chain)
+    {
+        if (KauriCrypto.UnB64(Sign) is not byte[] sign || KauriCrypto.UnB64(X25519) is not byte[] x || KauriCrypto.UnB64(ChainSig) is not byte[] sig) return null;
+        var ml = KauriCrypto.UnB64(MLKem) ?? [];
+        return chain.Signed(sign, x, ml, sig) ? new KauriRecipient(KauriCrypto.Sha256(sign)[..16], x, ml) : null;
+    }
+}
 
 public sealed record RecordOut(
     [property: JsonPropertyName("id")] string Id,
@@ -75,12 +85,12 @@ public sealed class SyncClient(Uri server, KauriChain chain, KauriDevice device)
         var req = new HttpRequestMessage(new HttpMethod(method), Url(Server, path));
         long time = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var nonce = KauriCrypto.Random(16);
-        req.Headers.Add("Kauri-Protocol", "1");
+        req.Headers.Add("Kauri-Protocol", "2");
         req.Headers.Add("Kauri-Chain", KauriCrypto.B64(Chain.Id));
         req.Headers.Add("Kauri-Device", KauriCrypto.B64(Device.PublicKey));
         req.Headers.Add("Kauri-Time", time.ToString());
         req.Headers.Add("Kauri-Nonce", KauriCrypto.B64(nonce));
-        req.Headers.Add("Kauri-Signature", KauriCrypto.B64(Device.SignRequest(method, path, time, nonce, body ?? [])));
+        req.Headers.Add("Kauri-Signature", KauriCrypto.B64(Device.SignRequest(method, path, time, nonce, Chain.Id, body ?? [])));
         if (body != null)
         {
             req.Content = new ByteArrayContent(body);
@@ -132,7 +142,7 @@ public sealed class SyncClient(Uri server, KauriChain chain, KauriDevice device)
         await Call("POST", "/v1/chains", new Dictionary<string, object>
         {
             ["chain_key"] = KauriCrypto.B64(Chain.AuthKey.PublicKey),
-            ["chain_sig"] = KauriCrypto.B64(Chain.AddSignature(Device.PublicKey)),
+            ["chain_sig"] = KauriCrypto.B64(SelfSignature()),
             ["device"] = Info(deviceName),
             ["keyring"] = new Dictionary<string, object> { ["epoch"] = 1, ["wrapped"] = KauriCrypto.B64(Chain.Wrap(dk, 1)), ["envelope"] = KauriCrypto.B64(env) },
         });
@@ -143,8 +153,14 @@ public sealed class SyncClient(Uri server, KauriChain chain, KauriDevice device)
     public Task JoinWithSyncCode(string deviceName) => Call("POST", "/v1/devices", new Dictionary<string, object>
     {
         ["device"] = Info(deviceName),
-        ["chain_sig"] = KauriCrypto.B64(Chain.AddSignature(Device.PublicKey)),
+        ["chain_sig"] = KauriCrypto.B64(SelfSignature()),
     });
+
+    byte[] SelfSignature()
+    {
+        var r = Device.Recipient;
+        return Chain.AddSignature(Device.PublicKey, r.X25519Key, r.MLKemKey);
+    }
 
     /// <summary>Adds another device as a member, with its envelope of the data key.</summary>
     public Task AddDevice(DeviceInfo info, uint epoch, byte[] dataKey)
@@ -152,7 +168,8 @@ public sealed class SyncClient(Uri server, KauriChain chain, KauriDevice device)
         var sign = KauriCrypto.UnB64(info.Sign) ?? throw new SyncCryptoException("bad device");
         var r = new KauriRecipient(KauriCrypto.Sha256(sign)[..16], KauriCrypto.UnB64(info.X25519) ?? [], KauriCrypto.UnB64(info.MLKem) ?? []);
         var env = KauriEnvelope.Seal(Chain.Id, epoch, r, dataKey);
-        return Call("POST", "/v1/devices", new Dictionary<string, object> { ["device"] = info, ["envelope"] = KauriCrypto.B64(env) });
+        var sig = Chain.AddSignature(sign, r.X25519Key, r.MLKemKey);
+        return Call("POST", "/v1/devices", new Dictionary<string, object> { ["device"] = info, ["chain_sig"] = KauriCrypto.B64(sig), ["envelope"] = KauriCrypto.B64(env) });
     }
 
     sealed record DevicesAnswer([property: JsonPropertyName("devices")] List<DeviceEntry> Devices);
@@ -167,9 +184,10 @@ public sealed class SyncClient(Uri server, KauriChain chain, KauriDevice device)
         [property: JsonPropertyName("envelope")] string? Envelope);
 
     /// <summary>The current epoch and its data key, from this device's envelope or the wrapped copy.</summary>
-    public async Task<(uint Epoch, byte[] Key)> DataKey()
+    public async Task<(uint Epoch, byte[] Key)> DataKey(uint? epoch = null)
     {
-        var k = await Call<Keyring>("GET", "/v1/keyring") ?? throw new SyncCryptoException("no keyring");
+        var k = await Call<Keyring>("GET", epoch is uint e ? $"/v1/keyring?epoch={e}" : "/v1/keyring") ?? throw new SyncCryptoException("no keyring");
+        if (epoch != null && k.Epoch != epoch) throw new SyncCryptoException("the server sent another epoch");
         // only the wrapped copy is authenticated by a key the server lacks; an envelope can be forged
         return (k.Epoch, Chain.Unwrap(KauriCrypto.UnB64(k.Wrapped) ?? throw new SyncCryptoException("bad keyring"), k.Epoch));
     }
@@ -198,8 +216,7 @@ public sealed class SyncClient(Uri server, KauriChain chain, KauriDevice device)
     public async Task<byte[]> ForwardedSecret()
     {
         var a = await Call<ForwardAnswer>("GET", "/v1/forward") ?? throw new SyncCryptoException("no forward");
-        var s = Device.OpenEnvelope(Chain.Id, 0, KauriCrypto.UnB64(a.Envelope) ?? []);
-        return s.Length == 32 ? s : throw new SyncCryptoException("bad forward");
+        return Chain.OpenForward(Device.OpenEnvelope(Chain.Id, 0, KauriCrypto.UnB64(a.Envelope) ?? []));
     }
 
     // ---------------- Events (§7.3) ----------------

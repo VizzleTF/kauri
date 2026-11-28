@@ -1,7 +1,7 @@
 //
 //  KauriSyncClient.swift
 //
-//  The HTTP side of Kauri Sync v1 (docs/sync.md §7): signed requests, the
+//  The HTTP side of Kauri Sync v2 (docs/sync.md §7): signed requests, the
 //  endpoints, Server-Sent Events and the unsigned pairing requests.
 //
 
@@ -27,8 +27,17 @@ struct KauriDeviceEntry: Decodable, Identifiable, Equatable {
     let x25519: String
     let mlkem: String?
     let name: String
+    let chain_sig: String? // swiftlint:disable:this identifier_name
     let added: Int64
     let removed: Int64?
+
+    /// The device's envelope keys, if a holder of the sync code signed them (§7.2).
+    func verified(by chain: KauriChain) -> KauriRecipient? {
+        guard let sign = Kauri.unb64(self.sign), let x = Kauri.unb64(x25519), let sig = chain_sig.flatMap(Kauri.unb64) else { return nil }
+        let ml = Kauri.unb64(mlkem ?? "") ?? Data()
+        guard chain.signed(sign: sign, x25519: x, mlkem: ml, signature: sig) else { return nil }
+        return KauriRecipient(id: Kauri.sha256(sign).prefix(16), x25519: x, mlkem: ml)
+    }
 }
 
 struct KauriRecordOut: Decodable {
@@ -84,12 +93,12 @@ struct KauriSyncClient {
         request.timeoutInterval = 60
         let time = Int64(Date().timeIntervalSince1970)
         let nonce = Kauri.random(16)
-        request.setValue("1", forHTTPHeaderField: "Kauri-Protocol")
+        request.setValue("2", forHTTPHeaderField: "Kauri-Protocol")
         request.setValue(Kauri.b64(chain.id), forHTTPHeaderField: "Kauri-Chain")
         request.setValue(Kauri.b64(device.publicKey), forHTTPHeaderField: "Kauri-Device")
         request.setValue(String(time), forHTTPHeaderField: "Kauri-Time")
         request.setValue(Kauri.b64(nonce), forHTTPHeaderField: "Kauri-Nonce")
-        let signature = device.signRequest(method: method, path: path, time: time, nonce: nonce, body: body ?? Data())
+        let signature = device.signRequest(method: method, path: path, time: time, nonce: nonce, chainID: chain.id, body: body ?? Data())
         request.setValue(Kauri.b64(signature), forHTTPHeaderField: "Kauri-Signature")
         if body != nil {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
@@ -147,7 +156,7 @@ struct KauriSyncClient {
         }
         try await call("POST", "/v1/chains", json: Body(
             chain_key: Kauri.b64(chain.authKey.publicKey.rawRepresentation),
-            chain_sig: Kauri.b64(chain.addSignature(device: device.publicKey)),
+            chain_sig: Kauri.b64(selfSignature()),
             device: deviceInfo(name: deviceName),
             keyring: Keyring(epoch: 1, wrapped: Kauri.b64(chain.wrap(dataKey: dataKey, epoch: 1)), envelope: Kauri.b64(envelope))
         ))
@@ -162,8 +171,13 @@ struct KauriSyncClient {
         }
         try await call("POST", "/v1/devices", json: Body(
             device: deviceInfo(name: deviceName),
-            chain_sig: Kauri.b64(chain.addSignature(device: device.publicKey))
+            chain_sig: Kauri.b64(selfSignature())
         ))
+    }
+
+    private func selfSignature() -> Data {
+        let r = device.recipient
+        return chain.addSignature(sign: device.publicKey, x25519: r.x25519, mlkem: r.mlkem)
     }
 
     /// Adds another device as a member, with its envelope of the data key.
@@ -171,8 +185,13 @@ struct KauriSyncClient {
         guard let sign = Kauri.unb64(info.sign), let x25519 = Kauri.unb64(info.x25519) else { throw KauriCryptoError.badLength }
         let recipient = KauriRecipient(id: Kauri.sha256(sign).prefix(16), x25519: x25519, mlkem: Kauri.unb64(info.mlkem) ?? Data())
         let envelope = try KauriEnvelope.seal(chainID: chain.id, epoch: epoch, to: recipient, payload: dataKey)
-        struct Body: Encodable { let device: KauriDeviceInfo; let envelope: String }
-        try await call("POST", "/v1/devices", json: Body(device: info, envelope: Kauri.b64(envelope)))
+        struct Body: Encodable {
+            let device: KauriDeviceInfo
+            let chain_sig: String // swiftlint:disable:this identifier_name
+            let envelope: String
+        }
+        let sig = chain.addSignature(sign: sign, x25519: recipient.x25519, mlkem: recipient.mlkem)
+        try await call("POST", "/v1/devices", json: Body(device: info, chain_sig: Kauri.b64(sig), envelope: Kauri.b64(envelope)))
     }
 
     func devices() async throws -> [KauriDeviceEntry] {
@@ -184,11 +203,11 @@ struct KauriSyncClient {
         try await call("DELETE", "/v1/devices/\(id)")
     }
 
-    /// The current epoch and its data key, from this device's envelope or
-    /// else from the wrapped copy.
-    func dataKey() async throws -> (UInt32, Data) {
+    /// An epoch (the current one if nil) and its data key, from the wrapped copy.
+    func dataKey(epoch want: UInt32? = nil) async throws -> (UInt32, Data) {
         struct Keyring: Decodable { let epoch: UInt32; let wrapped: String; let envelope: String? }
-        let keyring = try await call("GET", "/v1/keyring", as: Keyring.self)
+        let keyring = try await call("GET", want.map { "/v1/keyring?epoch=\($0)" } ?? "/v1/keyring", as: Keyring.self)
+        if let want, keyring.epoch != want { throw KauriCryptoError.badLength }
         // only the wrapped copy is authenticated by a key the server lacks; an envelope can be forged
         guard let wrapped = Kauri.unb64(keyring.wrapped) else { throw KauriCryptoError.badLength }
         return (keyring.epoch, try chain.unwrap(wrapped, epoch: keyring.epoch))
@@ -221,9 +240,7 @@ struct KauriSyncClient {
         struct Answer: Decodable { let envelope: String }
         let answer = try await call("GET", "/v1/forward", as: Answer.self)
         guard let env = Kauri.unb64(answer.envelope) else { throw KauriCryptoError.badLength }
-        let secret = try device.openEnvelope(chainID: chain.id, epoch: 0, envelope: env)
-        guard secret.count == 32 else { throw KauriCryptoError.badLength }
-        return secret
+        return try chain.openForward(try device.openEnvelope(chainID: chain.id, epoch: 0, envelope: env))
     }
 
     // MARK: - Events (§7.3)
@@ -238,12 +255,12 @@ struct KauriSyncClient {
                     let nonce = Kauri.random(16)
                     request.timeoutInterval = 90 // the server sends a comment every 25 s
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    request.setValue("1", forHTTPHeaderField: "Kauri-Protocol")
+                    request.setValue("2", forHTTPHeaderField: "Kauri-Protocol")
                     request.setValue(Kauri.b64(chain.id), forHTTPHeaderField: "Kauri-Chain")
                     request.setValue(Kauri.b64(device.publicKey), forHTTPHeaderField: "Kauri-Device")
                     request.setValue(String(time), forHTTPHeaderField: "Kauri-Time")
                     request.setValue(Kauri.b64(nonce), forHTTPHeaderField: "Kauri-Nonce")
-                    let signature = device.signRequest(method: "GET", path: "/v1/events", time: time, nonce: nonce, body: Data())
+                    let signature = device.signRequest(method: "GET", path: "/v1/events", time: time, nonce: nonce, chainID: chain.id, body: Data())
                     request.setValue(Kauri.b64(signature), forHTTPHeaderField: "Kauri-Signature")
                     let (bytes, response) = try await session.bytes(for: request)
                     guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
